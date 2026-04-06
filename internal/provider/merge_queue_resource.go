@@ -258,8 +258,7 @@ func (r *mergeQueueResource) Create(ctx context.Context, req resource.CreateRequ
 
 	// Step 2: apply all remaining optional attributes. If this fails, the queue exists but
 	// is partially configured. Set partial state so a subsequent apply triggers Update.
-	_, err = r.client.UpdateQueue(ctx, model.toUpdateRequest())
-	if err != nil {
+	if err = r.client.UpdateQueue(ctx, model.toUpdateRequest()); err != nil {
 		resp.Diagnostics.Append(resp.State.Set(ctx, &model)...)
 		resp.Diagnostics.AddError("Error configuring merge queue after creation", err.Error())
 		return
@@ -318,8 +317,7 @@ func (r *mergeQueueResource) Update(ctx context.Context, req resource.UpdateRequ
 		return
 	}
 
-	_, err := r.client.UpdateQueue(ctx, model.toUpdateRequest())
-	if err != nil {
+	if err := r.client.UpdateQueue(ctx, model.toUpdateRequest()); err != nil {
 		resp.Diagnostics.AddError(
 			"Error updating merge queue",
 			fmt.Sprintf("Could not update merge queue %s/%s/%s branch %q: %s",
