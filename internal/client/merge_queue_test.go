@@ -153,18 +153,17 @@ func TestUpdateQueue_OmitsNilFields(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&rawBody); err != nil {
 			t.Errorf("decoding request body: %v", err)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(UpdateQueueResponse{Queue: testQueue()})
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
 	}))
 	defer server.Close()
 
 	c := newTestClient("key", server.URL)
-	_, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
+	if err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
 		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch: "main",
 		// All optional fields left nil.
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("UpdateQueue error: %v", err)
 	}
 	for _, field := range []string{
@@ -181,8 +180,8 @@ func TestUpdateQueue_IncludesNonNilFields(t *testing.T) {
 	var rawBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&rawBody)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(UpdateQueueResponse{Queue: testQueue()})
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
 	}))
 	defer server.Close()
 
@@ -191,15 +190,14 @@ func TestUpdateQueue_IncludesNonNilFields(t *testing.T) {
 	mergeMethod := "SQUASH"
 	batch := true
 	c := newTestClient("key", server.URL)
-	_, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
+	if err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
 		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch: "main",
 		Mode:         &mode,
 		Concurrency:  &concurrency,
 		MergeMethod:  &mergeMethod,
 		Batch:        &batch,
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("UpdateQueue error: %v", err)
 	}
 	if rawBody["mode"] != "parallel" {
@@ -220,19 +218,18 @@ func TestUpdateQueue_DeleteRequiredStatuses(t *testing.T) {
 	var rawBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&rawBody)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(UpdateQueueResponse{Queue: testQueue()})
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
 	}))
 	defer server.Close()
 
 	deleteStatuses := true
 	c := newTestClient("key", server.URL)
-	_, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
+	if err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
 		Repo:                   Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch:           "main",
 		DeleteRequiredStatuses: &deleteStatuses,
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("UpdateQueue error: %v", err)
 	}
 	if rawBody["deleteRequiredStatuses"] != true {
@@ -244,19 +241,18 @@ func TestUpdateQueue_SendsEmptyRequiredStatuses(t *testing.T) {
 	var rawBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&rawBody)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(UpdateQueueResponse{Queue: testQueue()})
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
 	}))
 	defer server.Close()
 
 	empty := []string{}
 	c := newTestClient("key", server.URL)
-	_, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
+	if err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
 		Repo:             Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch:     "main",
 		RequiredStatuses: &empty,
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("UpdateQueue error: %v", err)
 	}
 	val, present := rawBody["requiredStatuses"]
@@ -277,7 +273,7 @@ func TestUpdateQueue_ReturnsErrorOnAPIFailure(t *testing.T) {
 	defer server.Close()
 
 	c := newTestClient("key", server.URL)
-	_, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
+	err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
 		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch: "main",
 	})

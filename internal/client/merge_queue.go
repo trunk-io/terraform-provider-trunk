@@ -23,12 +23,10 @@ func (c *Client) GetQueue(ctx context.Context, req GetQueueRequest) (*Queue, err
 
 // UpdateQueue updates configuration on an existing merge queue. Only non-nil pointer fields
 // in the request are sent to the API, leaving unspecified fields unchanged.
-func (c *Client) UpdateQueue(ctx context.Context, req UpdateQueueRequest) (*Queue, error) {
-	var resp UpdateQueueResponse
-	if err := c.doRequest(ctx, "updateQueue", req, &resp); err != nil {
-		return nil, err
-	}
-	return &resp.Queue, nil
+// The updateQueue API returns a non-JSON response body; callers should use GetQueue to read
+// updated state.
+func (c *Client) UpdateQueue(ctx context.Context, req UpdateQueueRequest) error {
+	return c.doRequest(ctx, "updateQueue", req, nil)
 }
 
 // DeleteQueue deletes a merge queue.
