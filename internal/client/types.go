@@ -174,11 +174,6 @@ type UpdateQueueRequest struct {
 	DeleteRequiredStatuses *bool `json:"deleteRequiredStatuses,omitempty"`
 }
 
-// UpdateQueueResponse is returned by the updateQueue endpoint.
-type UpdateQueueResponse struct {
-	Queue Queue `json:"queue"`
-}
-
 // DeleteQueueRequest identifies the queue to delete.
 type DeleteQueueRequest struct {
 	Repo         Repo   `json:"repo"`
