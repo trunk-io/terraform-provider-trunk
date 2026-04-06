@@ -30,7 +30,7 @@ func TestCreateQueue(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient("key", server.URL)
+	c := newTestClient("key", server.URL)
 	req := CreateQueueRequest{
 		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch: "main",
@@ -68,7 +68,7 @@ func TestCreateQueue_ReturnsErrorOnAPIFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient("key", server.URL)
+	c := newTestClient("key", server.URL)
 	_, err := c.CreateQueue(context.Background(), CreateQueueRequest{
 		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch: "main",
@@ -95,7 +95,7 @@ func TestGetQueue(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient("key", server.URL)
+	c := newTestClient("key", server.URL)
 	req := GetQueueRequest{
 		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch: "main",
@@ -133,7 +133,7 @@ func TestGetQueue_ReturnsErrorOnAPIFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient("key", server.URL)
+	c := newTestClient("key", server.URL)
 	_, err := c.GetQueue(context.Background(), GetQueueRequest{
 		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch: "main",
@@ -158,7 +158,7 @@ func TestUpdateQueue_OmitsNilFields(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient("key", server.URL)
+	c := newTestClient("key", server.URL)
 	_, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
 		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch: "main",
@@ -190,7 +190,7 @@ func TestUpdateQueue_IncludesNonNilFields(t *testing.T) {
 	concurrency := 3
 	mergeMethod := "SQUASH"
 	batch := true
-	c := NewClient("key", server.URL)
+	c := newTestClient("key", server.URL)
 	_, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
 		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch: "main",
@@ -226,7 +226,7 @@ func TestUpdateQueue_DeleteRequiredStatuses(t *testing.T) {
 	defer server.Close()
 
 	deleteStatuses := true
-	c := NewClient("key", server.URL)
+	c := newTestClient("key", server.URL)
 	_, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
 		Repo:                   Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch:           "main",
@@ -250,7 +250,7 @@ func TestUpdateQueue_SendsEmptyRequiredStatuses(t *testing.T) {
 	defer server.Close()
 
 	empty := []string{}
-	c := NewClient("key", server.URL)
+	c := newTestClient("key", server.URL)
 	_, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
 		Repo:             Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch:     "main",
@@ -276,7 +276,7 @@ func TestUpdateQueue_ReturnsErrorOnAPIFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient("key", server.URL)
+	c := newTestClient("key", server.URL)
 	_, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
 		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch: "main",
@@ -295,7 +295,7 @@ func TestDeleteQueue(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient("key", server.URL)
+	c := newTestClient("key", server.URL)
 	err := c.DeleteQueue(context.Background(), DeleteQueueRequest{
 		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch: "main",
@@ -318,7 +318,7 @@ func TestDeleteQueue_ReturnsAPIErrorOnFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient("key", server.URL)
+	c := newTestClient("key", server.URL)
 	err := c.DeleteQueue(context.Background(), DeleteQueueRequest{
 		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch: "main",

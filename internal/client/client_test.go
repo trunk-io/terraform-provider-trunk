@@ -5,7 +5,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
+
+// newTestClient creates a client with retries disabled for fast unit tests.
+func newTestClient(apiKey, baseURL string) *Client {
+	c := NewClient(apiKey, baseURL)
+	c.maxRetries = 0
+	c.baseRetryDelay = 0
+	return c
+}
 
 func TestDoRequest_SetsAuthAndContentTypeHeaders(t *testing.T) {
 	var gotAPIToken, gotContentType, gotMethod string
@@ -18,7 +27,7 @@ func TestDoRequest_SetsAuthAndContentTypeHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient("secret-key", server.URL)
+	c := newTestClient("secret-key", server.URL)
 	err := c.doRequest(context.Background(), "test", struct{}{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -41,7 +50,7 @@ func TestDoRequest_Returns4xxAsAPIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient("bad-key", server.URL)
+	c := newTestClient("bad-key", server.URL)
 	err := c.doRequest(context.Background(), "test", struct{}{}, nil)
 
 	apiErr, ok := err.(*APIError)
@@ -63,7 +72,7 @@ func TestDoRequest_Returns5xxAsAPIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient("key", server.URL)
+	c := newTestClient("key", server.URL)
 	err := c.doRequest(context.Background(), "test", struct{}{}, nil)
 
 	apiErr, ok := err.(*APIError)
@@ -85,7 +94,7 @@ func TestDoRequest_ReturnsErrorOnMalformedJSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient("key", server.URL)
+	c := newTestClient("key", server.URL)
 	var out struct{ Field string }
 	err := c.doRequest(context.Background(), "test", struct{}{}, &out)
 	if err == nil {
@@ -119,9 +128,56 @@ func TestDoRequest_ReturnsErrorOnNetworkFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	server.Close() // close before the request so Do() returns a network error
 
-	c := NewClient("key", server.URL)
+	c := newTestClient("key", server.URL)
 	err := c.doRequest(context.Background(), "test", struct{}{}, nil)
 	if err == nil {
 		t.Fatal("expected error on network failure, got nil")
+	}
+}
+
+func TestDoRequest_Retries5xxThenSucceeds(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("unavailable"))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	c := newTestClient("key", server.URL)
+	c.maxRetries = 3
+	c.baseRetryDelay = time.Millisecond // keep test fast
+	err := c.doRequest(context.Background(), "test", struct{}{}, nil)
+	if err != nil {
+		t.Fatalf("expected success after retries, got: %v", err)
+	}
+	if attempts != 3 {
+		t.Errorf("expected 3 attempts, got %d", attempts)
+	}
+}
+
+func TestDoRequest_DoesNotRetry4xx(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("bad request"))
+	}))
+	defer server.Close()
+
+	c := newTestClient("key", server.URL)
+	c.maxRetries = 3
+	c.baseRetryDelay = time.Millisecond
+	err := c.doRequest(context.Background(), "test", struct{}{}, nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if attempts != 1 {
+		t.Errorf("expected 1 attempt (no retries for 4xx), got %d", attempts)
 	}
 }

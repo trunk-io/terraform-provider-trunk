@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/trunk-io/terraform-provider-trunk/internal/client"
 )
@@ -80,26 +83,41 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Description: "Queue mode: \"single\" or \"parallel\".",
 				Optional:    true,
 				Computed:    true,
+				Validators: []validator.String{
+					stringvalidator.OneOf("single", "parallel"),
+				},
 			},
 			"concurrency": schema.Int64Attribute{
 				Description: "Number of concurrent test slots.",
 				Optional:    true,
 				Computed:    true,
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
+				},
 			},
 			"state": schema.StringAttribute{
 				Description: "Queue state: \"RUNNING\", \"PAUSED\", or \"DRAINING\".",
 				Optional:    true,
 				Computed:    true,
+				Validators: []validator.String{
+					stringvalidator.OneOf("RUNNING", "PAUSED", "DRAINING"),
+				},
 			},
 			"testing_timeout_minutes": schema.Int64Attribute{
 				Description: "Maximum minutes to wait for tests.",
 				Optional:    true,
 				Computed:    true,
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
+				},
 			},
 			"pending_failure_depth": schema.Int64Attribute{
 				Description: "Number of PRs below a failure to wait for before eviction.",
 				Optional:    true,
 				Computed:    true,
+				Validators: []validator.Int64{
+					int64validator.AtLeast(0),
+				},
 			},
 			"can_optimistically_merge": schema.BoolAttribute{
 				Description: "Allow optimistic merge when a lower PR passes.",
@@ -115,16 +133,25 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Description: "Maximum minutes to wait for a batch to fill.",
 				Optional:    true,
 				Computed:    true,
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
+				},
 			},
 			"batching_min_size": schema.Int64Attribute{
 				Description: "Minimum number of PRs per batch.",
 				Optional:    true,
 				Computed:    true,
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
+				},
 			},
 			"merge_method": schema.StringAttribute{
 				Description: "Merge method: \"MERGE_COMMIT\", \"SQUASH\", or \"REBASE\".",
 				Optional:    true,
 				Computed:    true,
+				Validators: []validator.String{
+					stringvalidator.OneOf("MERGE_COMMIT", "SQUASH", "REBASE"),
+				},
 			},
 			"comments_enabled": schema.BoolAttribute{
 				Description: "Post GitHub comments on PRs.",
@@ -150,16 +177,25 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Description: "Direct merge mode: \"OFF\" or \"ALWAYS\".",
 				Optional:    true,
 				Computed:    true,
+				Validators: []validator.String{
+					stringvalidator.OneOf("OFF", "ALWAYS"),
+				},
 			},
 			"optimization_mode": schema.StringAttribute{
 				Description: "Optimization mode: \"OFF\" or \"BISECTION_SKIP_REDUNDANT_TESTS\".",
 				Optional:    true,
 				Computed:    true,
+				Validators: []validator.String{
+					stringvalidator.OneOf("OFF", "BISECTION_SKIP_REDUNDANT_TESTS"),
+				},
 			},
 			"bisection_concurrency": schema.Int64Attribute{
 				Description: "Number of concurrent tests during bisection.",
 				Optional:    true,
 				Computed:    true,
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
+				},
 			},
 			"required_statuses": schema.ListAttribute{
 				Description: "Override required status checks. Set to null to revert to branch protection or trunk.yaml defaults; set to [] to explicitly require no statuses.",
@@ -261,7 +297,12 @@ func (r *mergeQueueResource) Read(ctx context.Context, req resource.ReadRequest,
 			resp.State.RemoveResource(ctx)
 			return
 		}
-		resp.Diagnostics.AddError("Error reading merge queue", err.Error())
+		resp.Diagnostics.AddError(
+			"Error reading merge queue",
+			fmt.Sprintf("Could not read merge queue %s/%s/%s branch %q: %s",
+				model.Repo.Host.ValueString(), model.Repo.Owner.ValueString(), model.Repo.Name.ValueString(),
+				model.TargetBranch.ValueString(), err.Error()),
+		)
 		return
 	}
 
@@ -279,7 +320,12 @@ func (r *mergeQueueResource) Update(ctx context.Context, req resource.UpdateRequ
 
 	_, err := r.client.UpdateQueue(ctx, model.toUpdateRequest())
 	if err != nil {
-		resp.Diagnostics.AddError("Error updating merge queue", err.Error())
+		resp.Diagnostics.AddError(
+			"Error updating merge queue",
+			fmt.Sprintf("Could not update merge queue %s/%s/%s branch %q: %s",
+				model.Repo.Host.ValueString(), model.Repo.Owner.ValueString(), model.Repo.Name.ValueString(),
+				model.TargetBranch.ValueString(), err.Error()),
+		)
 		return
 	}
 
@@ -288,7 +334,12 @@ func (r *mergeQueueResource) Update(ctx context.Context, req resource.UpdateRequ
 		TargetBranch: model.TargetBranch.ValueString(),
 	})
 	if err != nil {
-		resp.Diagnostics.AddError("Error reading merge queue after update", err.Error())
+		resp.Diagnostics.AddError(
+			"Error reading merge queue after update",
+			fmt.Sprintf("Could not read merge queue %s/%s/%s branch %q after update: %s",
+				model.Repo.Host.ValueString(), model.Repo.Owner.ValueString(), model.Repo.Name.ValueString(),
+				model.TargetBranch.ValueString(), err.Error()),
+		)
 		return
 	}
 
@@ -318,7 +369,12 @@ func (r *mergeQueueResource) Delete(ctx context.Context, req resource.DeleteRequ
 			)
 			return
 		}
-		resp.Diagnostics.AddError("Error deleting merge queue", err.Error())
+		resp.Diagnostics.AddError(
+			"Error deleting merge queue",
+			fmt.Sprintf("Could not delete merge queue %s/%s/%s branch %q: %s",
+				model.Repo.Host.ValueString(), model.Repo.Owner.ValueString(), model.Repo.Name.ValueString(),
+				model.TargetBranch.ValueString(), err.Error()),
+		)
 	}
 }
 

@@ -16,6 +16,8 @@ type trunkProvider struct {
 	version string
 }
 
+// New returns a factory function that creates a new trunkProvider instance.
+// The version string is embedded in provider metadata for registry display.
 func New(version string) func() provider.Provider {
 	return func() provider.Provider {
 		return &trunkProvider{
