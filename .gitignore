@@ -1,0 +1,10 @@
+# Build artifacts
+terraform-provider-trunk
+coverage.out
+dist/
+
+# Terraform state
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
