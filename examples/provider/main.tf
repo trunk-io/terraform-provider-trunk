@@ -1,7 +1,9 @@
 terraform {
+  required_version = ">= 1.0"
   required_providers {
     trunk = {
-      source = "registry.terraform.io/trunk-io/trunk"
+      source  = "trunk-io/trunk"
+      version = "~> 0.1"
     }
   }
 }

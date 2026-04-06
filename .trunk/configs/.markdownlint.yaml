@@ -1,0 +1,4 @@
+# Prettier friendly markdownlint config (all formatting rules disabled)
+extends: markdownlint/style/prettier
+# MD033: tfplugindocs generates <a id="..."> anchors in docs/ — unavoidable
+MD033: false

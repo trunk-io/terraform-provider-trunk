@@ -1,3 +1,13 @@
+terraform {
+  required_version = ">= 1.0"
+  required_providers {
+    trunk = {
+      source  = "trunk-io/trunk"
+      version = "~> 0.1"
+    }
+  }
+}
+
 resource "trunk_merge_queue" "example" {
   repo = {
     host  = "github.com"

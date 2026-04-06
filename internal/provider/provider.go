@@ -39,7 +39,7 @@ func (p *trunkProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp
 				Sensitive:   true,
 			},
 			"base_url": schema.StringAttribute{
-				Description: "Base URL for the Trunk API. Defaults to https://api.trunk.io/v1. Can also be set via the TRUNK_BASE_URL environment variable.",
+				Description: "Base URL for the Trunk API. Defaults to `https://api.trunk.io/v1`. Can also be set via the TRUNK_BASE_URL environment variable.",
 				Optional:    true,
 			},
 		},
