@@ -17,10 +17,11 @@ func newTestClient(apiKey, baseURL string) *Client {
 }
 
 func TestDoRequest_SetsAuthAndContentTypeHeaders(t *testing.T) {
-	var gotAPIToken, gotContentType, gotMethod string
+	var gotAPIToken, gotContentType, gotSource, gotMethod string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAPIToken = r.Header.Get("x-api-token")
 		gotContentType = r.Header.Get("Content-Type")
+		gotSource = r.Header.Get("x-source")
 		gotMethod = r.Method
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("{}"))
@@ -40,6 +41,9 @@ func TestDoRequest_SetsAuthAndContentTypeHeaders(t *testing.T) {
 	}
 	if gotMethod != http.MethodPost {
 		t.Errorf("method = %q, want %q", gotMethod, http.MethodPost)
+	}
+	if gotSource != "terraform" {
+		t.Errorf("x-source = %q, want %q", gotSource, "terraform")
 	}
 }
 
