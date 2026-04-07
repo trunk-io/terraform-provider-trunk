@@ -77,6 +77,7 @@ func (c *Client) doRequestOnce(ctx context.Context, endpoint string, bodyBytes [
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-token", c.apiKey)
+	req.Header.Set("x-source", "terraform")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
