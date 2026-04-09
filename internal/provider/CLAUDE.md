@@ -12,7 +12,8 @@ Terraform provider and resource implementations. Bridges the `internal/client` p
 
 - Keep all Terraform Plugin Framework imports here; `internal/client` must remain free of them
 - `mergeQueueResourceModel.fromQueue` populates state from the API; `toCreateRequest`/`toUpdateRequest` build API request structs
-- Computed + Optional fields (`mode`, `concurrency`, `state`, `direct_merge_mode`, `optimization_mode`) have API defaults the server fills in
+- All configurable fields are Computed + Optional with `UseStateForUnknown`; the API returns every field in getQueue/updateQueue responses
+- All enum values are lowercase (e.g., `"running"`, `"squash"`, `"off"`, `"bisection_skip_redundant_tests"`)
 - `null` `required_statuses` sends `deleteRequiredStatuses: true` to revert to branch protection / trunk.yaml defaults
 - Import ID format: `{host}/{owner}/{name}/{target_branch}` (uses `strings.SplitN(..., 4)` to support branch names with slashes)
 

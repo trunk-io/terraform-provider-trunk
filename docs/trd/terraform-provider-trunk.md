@@ -29,7 +29,7 @@ resource "trunk_merge_queue" "main" {
   target_branch = "main"
   mode          = "parallel"
   concurrency   = 3
-  merge_method  = "SQUASH"
+  merge_method  = "squash"
 }
 ```
 
@@ -49,8 +49,7 @@ resource "trunk_merge_queue" "main" {
 **Create lifecycle detail:** The `createQueue` API only accepts `repo`, `targetBranch`, `mode`, and `concurrency`. All other configuration is set via `updateQueue`. The resource's `Create` method must:
 
 1. Call `createQueue` with identity fields + `mode` + `concurrency`
-2. Immediately call `updateQueue` with all remaining optional attributes
-3. Call `getQueue` to read back the full state
+2. Immediately call `updateQueue` with all remaining optional attributes (the response contains the full queue state)
 
 If step 2 fails, the resource exists but is partially configured. The `Create` method returns an error with the resource ID set in state, so a subsequent `terraform apply` triggers `Update` to complete configuration.
 
@@ -62,7 +61,7 @@ A merge queue for github.com/my-org/my-repo already exists on branch "main". Imp
   terraform import trunk_merge_queue.<name> "github.com/my-org/my-repo/main"
 ```
 
-**Delete lifecycle detail:** The `deleteQueue` API returns 400 if the queue still has PRs in it. Since the provider always sends well-formed requests, a 400 is treated as "queue not empty" and surfaces a descriptive error telling the user to set `state = "DRAINING"` and wait for the queue to empty before retrying. All other errors (5xx) are propagated as-is. Deleting a non-existent queue is a no-op at the API level.
+**Delete lifecycle detail:** The `deleteQueue` API returns 400 if the queue still has PRs in it. Since the provider always sends well-formed requests, a 400 is treated as "queue not empty" and surfaces a descriptive error telling the user to set `state = "draining"` and wait for the queue to empty before retrying. All other errors (5xx) are propagated as-is. Deleting a non-existent queue is a no-op at the API level.
 
 **Import:** Users can import existing queues via `terraform import trunk_merge_queue.main "github.com/my-org/my-repo/main"` (format: `{host}/{owner}/{name}/{target_branch}`).
 
@@ -93,20 +92,20 @@ All optional attributes are also `Computed: true` because the API always returns
 | --------------------------------- | ------ | ----------- | -------------------------------------------------- |
 | `mode`                            | string | `"single"`  | Queue mode: `"single"` or `"parallel"`             |
 | `concurrency`                     | int    | `1`         | Number of concurrent test slots                    |
-| `state`                           | string | `"RUNNING"` | Queue state: `"RUNNING"`, `"PAUSED"`, `"DRAINING"` |
+| `state`                           | string | `"running"` | Queue state: `"running"`, `"paused"`, `"draining"` |
 | `testing_timeout_minutes`         | int    | --          | Max minutes to wait for tests                      |
 | `pending_failure_depth`           | int    | --          | PRs below a failure to wait for before eviction    |
 | `can_optimistically_merge`        | bool   | `false`     | Optimistic merge when lower PR passes              |
 | `batch`                           | bool   | `false`     | Enable batching                                    |
 | `batching_max_wait_time_minutes`  | int    | --          | Max minutes to wait for batch to fill              |
 | `batching_min_size`               | int    | --          | Minimum PRs per batch                              |
-| `merge_method`                    | string | --          | `"MERGE_COMMIT"`, `"SQUASH"`, `"REBASE"`           |
+| `merge_method`                    | string | --          | `"merge_commit"`, `"squash"`, `"rebase"`           |
 | `comments_enabled`                | bool   | --          | Post GitHub comments on PRs                        |
 | `commands_enabled`                | bool   | --          | Allow `/trunk merge` comments                      |
 | `create_prs_for_testing_branches` | bool   | --          | Create PRs for testing branches                    |
 | `status_check_enabled`            | bool   | --          | Post GitHub status checks                          |
-| `direct_merge_mode`               | string | `"OFF"`     | `"OFF"` or `"ALWAYS"`                              |
-| `optimization_mode`               | string | `"OFF"`     | `"OFF"` or `"BISECTION_SKIP_REDUNDANT_TESTS"`      |
+| `direct_merge_mode`               | string | `"off"`     | `"off"` or `"always"`                              |
+| `optimization_mode`               | string | `"off"`     | `"off"` or `"bisection_skip_redundant_tests"`      |
 | `bisection_concurrency`           | int    | --          | Concurrent tests during bisection                  |
 | `required_statuses`               | list   | --          | Override required status checks                    |
 

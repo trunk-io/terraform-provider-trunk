@@ -30,13 +30,13 @@ Manages a Trunk merge queue.
 - `comments_enabled` (Boolean) Post GitHub comments on PRs.
 - `concurrency` (Number) Number of concurrent test slots.
 - `create_prs_for_testing_branches` (Boolean) Create PRs for testing branches.
-- `direct_merge_mode` (String) Direct merge mode: "OFF" or "ALWAYS".
-- `merge_method` (String) Merge method: "MERGE_COMMIT", "SQUASH", or "REBASE".
+- `direct_merge_mode` (String) Direct merge mode: "off" or "always".
+- `merge_method` (String) Merge method: "merge_commit", "squash", or "rebase".
 - `mode` (String) Queue mode: "single" or "parallel".
-- `optimization_mode` (String) Optimization mode: "OFF" or "BISECTION_SKIP_REDUNDANT_TESTS".
+- `optimization_mode` (String) Optimization mode: "off" or "bisection_skip_redundant_tests".
 - `pending_failure_depth` (Number) Number of PRs below a failure to wait for before eviction.
 - `required_statuses` (List of String) Override required status checks. Set to null to revert to branch protection or trunk.yaml defaults; set to [] to explicitly require no statuses.
-- `state` (String) Queue state: "RUNNING", "PAUSED", or "DRAINING".
+- `state` (String) Queue state: "running", "paused", or "draining".
 - `status_check_enabled` (Boolean) Post GitHub status checks.
 - `testing_timeout_minutes` (Number) Maximum minutes to wait for tests.
 

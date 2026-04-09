@@ -11,11 +11,23 @@ import (
 // testQueue returns a minimal Queue for use in handler responses.
 func testQueue() Queue {
 	return Queue{
-		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
-		TargetBranch: "main",
-		Mode:         "single",
-		Concurrency:  1,
-		State:        "RUNNING",
+		Mode:                        "single",
+		Concurrency:                 1,
+		State:                       "running",
+		TestingTimeoutMinutes:       60,
+		PendingFailureDepth:         0,
+		CanOptimisticallyMerge:      false,
+		Batch:                       false,
+		BatchingMaxWaitTimeMinutes:  0,
+		BatchingMinSize:             1,
+		CreatePrsForTestingBranches: false,
+		MergeMethod:                 "squash",
+		CommentsEnabled:             true,
+		CommandsEnabled:             true,
+		StatusCheckEnabled:          false,
+		DirectMergeMode:             "off",
+		OptimizationMode:            "off",
+		BisectionConcurrency:        1,
 	}
 }
 
@@ -25,8 +37,8 @@ func TestCreateQueue(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
 			t.Errorf("decoding request body: %v", err)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(CreateQueueResponse{Queue: testQueue()})
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("{}"))
 	}))
 	defer server.Close()
 
@@ -37,15 +49,9 @@ func TestCreateQueue(t *testing.T) {
 		Mode:         "single",
 		Concurrency:  1,
 	}
-	queue, err := c.CreateQueue(context.Background(), req)
+	err := c.CreateQueue(context.Background(), req)
 	if err != nil {
 		t.Fatalf("CreateQueue error: %v", err)
-	}
-	if queue.TargetBranch != "main" {
-		t.Errorf("TargetBranch = %q, want %q", queue.TargetBranch, "main")
-	}
-	if queue.Mode != "single" {
-		t.Errorf("Mode = %q, want %q", queue.Mode, "single")
 	}
 	if gotReq.Repo.Host != "github.com" {
 		t.Errorf("request repo.host = %q, want %q", gotReq.Repo.Host, "github.com")
@@ -69,7 +75,7 @@ func TestCreateQueue_ReturnsErrorOnAPIFailure(t *testing.T) {
 	defer server.Close()
 
 	c := newTestClient("key", server.URL)
-	_, err := c.CreateQueue(context.Background(), CreateQueueRequest{
+	err := c.CreateQueue(context.Background(), CreateQueueRequest{
 		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch: "main",
 	})
@@ -84,14 +90,8 @@ func TestGetQueue(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
 			t.Errorf("decoding request body: %v", err)
 		}
-		// Respond with the actual flat API format (no queue wrapper, uppercase mode, branch field).
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(getQueueAPIResponse{
-			Branch:      "main",
-			Mode:        "SINGLE",
-			Concurrency: 1,
-			State:       "RUNNING",
-		})
+		_ = json.NewEncoder(w).Encode(testQueue())
 	}))
 	defer server.Close()
 
@@ -104,10 +104,9 @@ func TestGetQueue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetQueue error: %v", err)
 	}
-	if queue.State != "RUNNING" {
-		t.Errorf("State = %q, want %q", queue.State, "RUNNING")
+	if queue.State != "running" {
+		t.Errorf("State = %q, want %q", queue.State, "running")
 	}
-	// Mode should be normalized from API uppercase to schema lowercase.
 	if queue.Mode != "single" {
 		t.Errorf("Mode = %q, want %q", queue.Mode, "single")
 	}
@@ -123,6 +122,92 @@ func TestGetQueue(t *testing.T) {
 	}
 	if gotReq.TargetBranch != "main" {
 		t.Errorf("request targetBranch = %q, want %q", gotReq.TargetBranch, "main")
+	}
+}
+
+func TestGetQueue_AllFields(t *testing.T) {
+	statuses := []string{"ci/test", "ci/lint"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		q := Queue{
+			Mode:                        "parallel",
+			Concurrency:                 3,
+			State:                       "running",
+			TestingTimeoutMinutes:       60,
+			PendingFailureDepth:         2,
+			CanOptimisticallyMerge:      true,
+			Batch:                       true,
+			BatchingMaxWaitTimeMinutes:  10,
+			BatchingMinSize:             3,
+			CreatePrsForTestingBranches: true,
+			MergeMethod:                 "squash",
+			CommentsEnabled:             true,
+			CommandsEnabled:             true,
+			StatusCheckEnabled:          true,
+			DirectMergeMode:             "off",
+			OptimizationMode:            "bisection_skip_redundant_tests",
+			BisectionConcurrency:        5,
+			RequiredStatuses:            &statuses,
+		}
+		_ = json.NewEncoder(w).Encode(q)
+	}))
+	defer server.Close()
+
+	c := newTestClient("key", server.URL)
+	queue, err := c.GetQueue(context.Background(), GetQueueRequest{
+		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
+		TargetBranch: "main",
+	})
+	if err != nil {
+		t.Fatalf("GetQueue error: %v", err)
+	}
+
+	if queue.Mode != "parallel" {
+		t.Errorf("Mode = %q, want %q", queue.Mode, "parallel")
+	}
+	if queue.MergeMethod != "squash" {
+		t.Errorf("MergeMethod = %q, want %q", queue.MergeMethod, "squash")
+	}
+	if !queue.CommentsEnabled {
+		t.Error("CommentsEnabled = false, want true")
+	}
+	if !queue.CommandsEnabled {
+		t.Error("CommandsEnabled = false, want true")
+	}
+	if !queue.StatusCheckEnabled {
+		t.Error("StatusCheckEnabled = false, want true")
+	}
+	if queue.DirectMergeMode != "off" {
+		t.Errorf("DirectMergeMode = %q, want %q", queue.DirectMergeMode, "off")
+	}
+	if queue.OptimizationMode != "bisection_skip_redundant_tests" {
+		t.Errorf("OptimizationMode = %q, want %q", queue.OptimizationMode, "bisection_skip_redundant_tests")
+	}
+	if queue.BisectionConcurrency != 5 {
+		t.Errorf("BisectionConcurrency = %d, want 5", queue.BisectionConcurrency)
+	}
+	if queue.RequiredStatuses == nil || len(*queue.RequiredStatuses) != 2 {
+		t.Fatalf("RequiredStatuses = %v, want 2 elements", queue.RequiredStatuses)
+	}
+}
+
+func TestGetQueue_NullRequiredStatuses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"mode":"single","concurrency":1,"state":"running","testingTimeoutMinutes":60,"pendingFailureDepth":0,"canOptimisticallyMerge":false,"batch":false,"batchingMaxWaitTimeMinutes":0,"batchingMinSize":1,"createPrsForTestingBranches":false,"mergeMethod":"squash","commentsEnabled":true,"commandsEnabled":true,"statusCheckEnabled":false,"directMergeMode":"off","optimizationMode":"off","bisectionConcurrency":1,"requiredStatuses":null}`))
+	}))
+	defer server.Close()
+
+	c := newTestClient("key", server.URL)
+	queue, err := c.GetQueue(context.Background(), GetQueueRequest{
+		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
+		TargetBranch: "main",
+	})
+	if err != nil {
+		t.Fatalf("GetQueue error: %v", err)
+	}
+	if queue.RequiredStatuses != nil {
+		t.Errorf("RequiredStatuses = %v, want nil", queue.RequiredStatuses)
 	}
 }
 
@@ -153,13 +238,13 @@ func TestUpdateQueue_OmitsNilFields(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&rawBody); err != nil {
 			t.Errorf("decoding request body: %v", err)
 		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("OK"))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(testQueue())
 	}))
 	defer server.Close()
 
 	c := newTestClient("key", server.URL)
-	if err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
+	if _, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
 		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch: "main",
 		// All optional fields left nil.
@@ -180,17 +265,17 @@ func TestUpdateQueue_IncludesNonNilFields(t *testing.T) {
 	var rawBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&rawBody)
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("OK"))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(testQueue())
 	}))
 	defer server.Close()
 
 	mode := "parallel"
 	concurrency := 3
-	mergeMethod := "SQUASH"
+	mergeMethod := "squash"
 	batch := true
 	c := newTestClient("key", server.URL)
-	if err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
+	if _, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
 		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch: "main",
 		Mode:         &mode,
@@ -206,11 +291,44 @@ func TestUpdateQueue_IncludesNonNilFields(t *testing.T) {
 	if rawBody["concurrency"] != float64(3) {
 		t.Errorf("concurrency = %v, want 3", rawBody["concurrency"])
 	}
-	if rawBody["mergeMethod"] != "SQUASH" {
-		t.Errorf("mergeMethod = %v, want %q", rawBody["mergeMethod"], "SQUASH")
+	if rawBody["mergeMethod"] != "squash" {
+		t.Errorf("mergeMethod = %v, want %q", rawBody["mergeMethod"], "squash")
 	}
 	if rawBody["batch"] != true {
 		t.Errorf("batch = %v, want true", rawBody["batch"])
+	}
+}
+
+func TestUpdateQueue_ReturnsQueue(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		q := testQueue()
+		q.Mode = "parallel"
+		q.Concurrency = 3
+		q.MergeMethod = "squash"
+		q.DirectMergeMode = "off"
+		_ = json.NewEncoder(w).Encode(q)
+	}))
+	defer server.Close()
+
+	mode := "parallel"
+	c := newTestClient("key", server.URL)
+	queue, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
+		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
+		TargetBranch: "main",
+		Mode:         &mode,
+	})
+	if err != nil {
+		t.Fatalf("UpdateQueue error: %v", err)
+	}
+	if queue.Mode != "parallel" {
+		t.Errorf("Mode = %q, want %q", queue.Mode, "parallel")
+	}
+	if queue.MergeMethod != "squash" {
+		t.Errorf("MergeMethod = %q, want %q", queue.MergeMethod, "squash")
+	}
+	if queue.Repo.Owner != "my-org" {
+		t.Errorf("Repo.Owner = %q, want %q", queue.Repo.Owner, "my-org")
 	}
 }
 
@@ -218,14 +336,14 @@ func TestUpdateQueue_DeleteRequiredStatuses(t *testing.T) {
 	var rawBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&rawBody)
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("OK"))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(testQueue())
 	}))
 	defer server.Close()
 
 	deleteStatuses := true
 	c := newTestClient("key", server.URL)
-	if err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
+	if _, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
 		Repo:                   Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch:           "main",
 		DeleteRequiredStatuses: &deleteStatuses,
@@ -241,14 +359,14 @@ func TestUpdateQueue_SendsEmptyRequiredStatuses(t *testing.T) {
 	var rawBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&rawBody)
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("OK"))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(testQueue())
 	}))
 	defer server.Close()
 
 	empty := []string{}
 	c := newTestClient("key", server.URL)
-	if err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
+	if _, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
 		Repo:             Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch:     "main",
 		RequiredStatuses: &empty,
@@ -273,7 +391,7 @@ func TestUpdateQueue_ReturnsErrorOnAPIFailure(t *testing.T) {
 	defer server.Close()
 
 	c := newTestClient("key", server.URL)
-	err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
+	_, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
 		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
 		TargetBranch: "main",
 	})
