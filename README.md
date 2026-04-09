@@ -32,7 +32,7 @@ resource "trunk_merge_queue" "example" {
   target_branch = "main"
   mode          = "parallel"
   concurrency   = 3
-  merge_method  = "SQUASH"
+  merge_method  = "squash"
 }
 ```
 
