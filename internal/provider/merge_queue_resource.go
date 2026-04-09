@@ -10,6 +10,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -44,6 +47,9 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"id": schema.StringAttribute{
 				Description: "Unique identifier for this queue in the format {host}/{owner}/{name}/{target_branch}.",
 				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"repo": schema.SingleNestedAttribute{
 				Description: "Repository this queue is associated with.",
@@ -86,6 +92,9 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Validators: []validator.String{
 					stringvalidator.OneOf("single", "parallel"),
 				},
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"concurrency": schema.Int64Attribute{
 				Description: "Number of concurrent test slots.",
@@ -94,13 +103,19 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Validators: []validator.Int64{
 					int64validator.AtLeast(1),
 				},
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
 			},
 			"state": schema.StringAttribute{
-				Description: "Queue state: \"RUNNING\", \"PAUSED\", or \"DRAINING\".",
+				Description: "Queue state: \"running\", \"paused\", or \"draining\".",
 				Optional:    true,
 				Computed:    true,
 				Validators: []validator.String{
-					stringvalidator.OneOf("RUNNING", "PAUSED", "DRAINING"),
+					stringvalidator.OneOf("running", "paused", "draining"),
+				},
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"testing_timeout_minutes": schema.Int64Attribute{
@@ -110,6 +125,9 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Validators: []validator.Int64{
 					int64validator.AtLeast(1),
 				},
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
 			},
 			"pending_failure_depth": schema.Int64Attribute{
 				Description: "Number of PRs below a failure to wait for before eviction.",
@@ -118,16 +136,25 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Validators: []validator.Int64{
 					int64validator.AtLeast(0),
 				},
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
 			},
 			"can_optimistically_merge": schema.BoolAttribute{
 				Description: "Allow optimistic merge when a lower PR passes.",
 				Optional:    true,
 				Computed:    true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"batch": schema.BoolAttribute{
 				Description: "Enable batching.",
 				Optional:    true,
 				Computed:    true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"batching_max_wait_time_minutes": schema.Int64Attribute{
 				Description: "Maximum minutes to wait for a batch to fill.",
@@ -135,6 +162,9 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Computed:    true,
 				Validators: []validator.Int64{
 					int64validator.AtLeast(1),
+				},
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
 				},
 			},
 			"batching_min_size": schema.Int64Attribute{
@@ -144,49 +174,73 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Validators: []validator.Int64{
 					int64validator.AtLeast(1),
 				},
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
+			},
+			"create_prs_for_testing_branches": schema.BoolAttribute{
+				Description: "Create PRs for testing branches.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"merge_method": schema.StringAttribute{
-				Description: "Merge method: \"MERGE_COMMIT\", \"SQUASH\", or \"REBASE\".",
+				Description: "Merge method: \"merge_commit\", \"squash\", or \"rebase\".",
 				Optional:    true,
 				Computed:    true,
 				Validators: []validator.String{
-					stringvalidator.OneOf("MERGE_COMMIT", "SQUASH", "REBASE"),
+					stringvalidator.OneOf("merge_commit", "squash", "rebase"),
+				},
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"comments_enabled": schema.BoolAttribute{
 				Description: "Post GitHub comments on PRs.",
 				Optional:    true,
 				Computed:    true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"commands_enabled": schema.BoolAttribute{
 				Description: "Allow /trunk merge comments.",
 				Optional:    true,
 				Computed:    true,
-			},
-			"create_prs_for_testing_branches": schema.BoolAttribute{
-				Description: "Create PRs for testing branches.",
-				Optional:    true,
-				Computed:    true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"status_check_enabled": schema.BoolAttribute{
 				Description: "Post GitHub status checks.",
 				Optional:    true,
 				Computed:    true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"direct_merge_mode": schema.StringAttribute{
-				Description: "Direct merge mode: \"OFF\" or \"ALWAYS\".",
+				Description: "Direct merge mode: \"off\" or \"always\".",
 				Optional:    true,
 				Computed:    true,
 				Validators: []validator.String{
-					stringvalidator.OneOf("OFF", "ALWAYS"),
+					stringvalidator.OneOf("off", "always"),
+				},
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"optimization_mode": schema.StringAttribute{
-				Description: "Optimization mode: \"OFF\" or \"BISECTION_SKIP_REDUNDANT_TESTS\".",
+				Description: "Optimization mode: \"off\" or \"bisection_skip_redundant_tests\".",
 				Optional:    true,
 				Computed:    true,
 				Validators: []validator.String{
-					stringvalidator.OneOf("OFF", "BISECTION_SKIP_REDUNDANT_TESTS"),
+					stringvalidator.OneOf("off", "bisection_skip_redundant_tests"),
+				},
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"bisection_concurrency": schema.Int64Attribute{
@@ -196,12 +250,18 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Validators: []validator.Int64{
 					int64validator.AtLeast(1),
 				},
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
 			},
 			"required_statuses": schema.ListAttribute{
 				Description: "Override required status checks. Set to null to revert to branch protection or trunk.yaml defaults; set to [] to explicitly require no statuses.",
 				Optional:    true,
 				Computed:    true,
 				ElementType: types.StringType,
+				PlanModifiers: []planmodifier.List{
+					listplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
@@ -229,8 +289,14 @@ func (r *mergeQueueResource) Create(ctx context.Context, req resource.CreateRequ
 		return
 	}
 
+	var config mergeQueueResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	// Step 1: create the queue with identity fields, mode, and concurrency.
-	_, err := r.client.CreateQueue(ctx, model.toCreateRequest())
+	err := r.client.CreateQueue(ctx, model.toCreateRequest())
 	if err != nil {
 		var apiErr *client.APIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == 409 {
@@ -256,21 +322,11 @@ func (r *mergeQueueResource) Create(ctx context.Context, req resource.CreateRequ
 		return
 	}
 
-	// Step 2: apply all remaining optional attributes. If this fails, the queue exists but
-	// is partially configured. Set partial state so a subsequent apply triggers Update.
-	if err = r.client.UpdateQueue(ctx, model.toUpdateRequest()); err != nil {
+	// Step 2: apply all remaining optional attributes via update, which returns the full state.
+	queue, err := r.client.UpdateQueue(ctx, model.toUpdateRequest(&config))
+	if err != nil {
 		resp.Diagnostics.Append(resp.State.Set(ctx, &model)...)
 		resp.Diagnostics.AddError("Error configuring merge queue after creation", err.Error())
-		return
-	}
-
-	// Step 3: read back the full authoritative state from the API.
-	queue, err := r.client.GetQueue(ctx, client.GetQueueRequest{
-		Repo:         client.Repo{Host: model.Repo.Host.ValueString(), Owner: model.Repo.Owner.ValueString(), Name: model.Repo.Name.ValueString()},
-		TargetBranch: model.TargetBranch.ValueString(),
-	})
-	if err != nil {
-		resp.Diagnostics.AddError("Error reading merge queue after creation", err.Error())
 		return
 	}
 
@@ -317,24 +373,17 @@ func (r *mergeQueueResource) Update(ctx context.Context, req resource.UpdateRequ
 		return
 	}
 
-	if err := r.client.UpdateQueue(ctx, model.toUpdateRequest()); err != nil {
-		resp.Diagnostics.AddError(
-			"Error updating merge queue",
-			fmt.Sprintf("Could not update merge queue %s/%s/%s branch %q: %s",
-				model.Repo.Host.ValueString(), model.Repo.Owner.ValueString(), model.Repo.Name.ValueString(),
-				model.TargetBranch.ValueString(), err.Error()),
-		)
+	var config mergeQueueResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	queue, err := r.client.GetQueue(ctx, client.GetQueueRequest{
-		Repo:         client.Repo{Host: model.Repo.Host.ValueString(), Owner: model.Repo.Owner.ValueString(), Name: model.Repo.Name.ValueString()},
-		TargetBranch: model.TargetBranch.ValueString(),
-	})
+	queue, err := r.client.UpdateQueue(ctx, model.toUpdateRequest(&config))
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Error reading merge queue after update",
-			fmt.Sprintf("Could not read merge queue %s/%s/%s branch %q after update: %s",
+			"Error updating merge queue",
+			fmt.Sprintf("Could not update merge queue %s/%s/%s branch %q: %s",
 				model.Repo.Host.ValueString(), model.Repo.Owner.ValueString(), model.Repo.Name.ValueString(),
 				model.TargetBranch.ValueString(), err.Error()),
 		)

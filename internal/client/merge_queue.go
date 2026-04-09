@@ -4,29 +4,33 @@ import "context"
 
 // CreateQueue creates a new merge queue. Per the API contract, only repo, targetBranch,
 // mode, and concurrency are accepted; remaining configuration must be applied via UpdateQueue.
-func (c *Client) CreateQueue(ctx context.Context, req CreateQueueRequest) (*Queue, error) {
-	var resp CreateQueueResponse
-	if err := c.doRequest(ctx, "createQueue", req, &resp); err != nil {
-		return nil, err
-	}
-	return &resp.Queue, nil
+// The createQueue endpoint returns an empty response body.
+func (c *Client) CreateQueue(ctx context.Context, req CreateQueueRequest) error {
+	return c.doRequest(ctx, "createQueue", req, nil)
 }
 
 // GetQueue retrieves the current state of a merge queue.
 func (c *Client) GetQueue(ctx context.Context, req GetQueueRequest) (*Queue, error) {
-	var resp getQueueAPIResponse
-	if err := c.doRequest(ctx, "getQueue", req, &resp); err != nil {
+	var q Queue
+	if err := c.doRequest(ctx, "getQueue", req, &q); err != nil {
 		return nil, err
 	}
-	return resp.toQueue(req.Repo, req.TargetBranch), nil
+	// Identity fields are not in the response body; populate from the request.
+	q.Repo = req.Repo
+	q.TargetBranch = req.TargetBranch
+	return &q, nil
 }
 
-// UpdateQueue updates configuration on an existing merge queue. Only non-nil pointer fields
-// in the request are sent to the API, leaving unspecified fields unchanged.
-// The updateQueue API returns a non-JSON response body; callers should use GetQueue to read
-// updated state.
-func (c *Client) UpdateQueue(ctx context.Context, req UpdateQueueRequest) error {
-	return c.doRequest(ctx, "updateQueue", req, nil)
+// UpdateQueue updates configuration on an existing merge queue and returns the updated state.
+func (c *Client) UpdateQueue(ctx context.Context, req UpdateQueueRequest) (*Queue, error) {
+	var q Queue
+	if err := c.doRequest(ctx, "updateQueue", req, &q); err != nil {
+		return nil, err
+	}
+	// Identity fields are not in the response body; populate from the request.
+	q.Repo = req.Repo
+	q.TargetBranch = req.TargetBranch
+	return &q, nil
 }
 
 // DeleteQueue deletes a merge queue.
