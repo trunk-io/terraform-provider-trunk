@@ -33,6 +33,10 @@ type Queue struct {
 	DirectMergeMode             string `json:"directMergeMode"`
 	OptimizationMode            string `json:"optimizationMode"`
 	BisectionConcurrency        int    `json:"bisectionConcurrency"`
+	ExtensionEnabled            bool   `json:"extensionEnabled"`
+	EnqueueingLabel             string `json:"enqueueingLabel"`
+	LabelCommandsEnabled        bool   `json:"labelCommandsEnabled"`
+	StateLabelsEnabled          bool   `json:"stateLabelsEnabled"`
 
 	// RequiredStatuses is null when no manual override is set (uses branch protection / trunk.yaml defaults).
 	RequiredStatuses *[]string `json:"requiredStatuses"`
@@ -88,6 +92,10 @@ type UpdateQueueRequest struct {
 	DirectMergeMode             *string   `json:"directMergeMode,omitempty"`
 	OptimizationMode            *string   `json:"optimizationMode,omitempty"`
 	BisectionConcurrency        *int      `json:"bisectionConcurrency,omitempty"`
+	ExtensionEnabled            *bool     `json:"extensionEnabled,omitempty"`
+	EnqueueingLabel             *string   `json:"enqueueingLabel,omitempty"`
+	LabelCommandsEnabled        *bool     `json:"labelCommandsEnabled,omitempty"`
+	StateLabelsEnabled          *bool     `json:"stateLabelsEnabled,omitempty"`
 	RequiredStatuses            *[]string `json:"requiredStatuses,omitempty"`
 
 	// DeleteRequiredStatuses reverts required statuses to branch protection / trunk.yaml defaults
