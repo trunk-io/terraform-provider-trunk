@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://registry.terraform.io/providers/trunk-io/trunk/latest/docs
+    about: Provider documentation on the Terraform Registry
+  - name: Trunk.io Documentation
+    url: https://docs.trunk.io
+    about: General Trunk.io documentation
