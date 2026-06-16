@@ -107,6 +107,10 @@ All optional attributes are also `Computed: true` because the API always returns
 | `direct_merge_mode`               | string | `"off"`     | `"off"` or `"always"`                              |
 | `optimization_mode`               | string | `"off"`     | `"off"` or `"bisection_skip_redundant_tests"`      |
 | `bisection_concurrency`           | int    | --          | Concurrent tests during bisection                  |
+| `extension_enabled`               | bool   | --          | Whether the browser extension is enabled           |
+| `enqueueing_label`                | string | --          | GitHub label whose application enqueues a PR       |
+| `label_commands_enabled`          | bool   | --          | Whether label-based commands are enabled           |
+| `state_labels_enabled`            | bool   | --          | Whether MQ applies state labels to PRs             |
 | `required_statuses`               | list   | --          | Override required status checks                    |
 
 **Note on `required_statuses`:** This field distinguishes three states:
