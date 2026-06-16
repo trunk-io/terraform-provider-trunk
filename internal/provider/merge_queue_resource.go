@@ -254,6 +254,41 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 					int64planmodifier.UseStateForUnknown(),
 				},
 			},
+			"extension_enabled": schema.BoolAttribute{
+				Description: "Whether the Trunk Merge Queue browser extension is enabled (shown) for this repository.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"enqueueing_label": schema.StringAttribute{
+				Description: "The GitHub label whose application enqueues a PR onto the merge queue.",
+				Optional:    true,
+				Computed:    true,
+				Validators: []validator.String{
+					stringvalidator.LengthAtLeast(1),
+				},
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"label_commands_enabled": schema.BoolAttribute{
+				Description: "Whether label-based commands (e.g. enqueue/dequeue via labels) are enabled on the merge queue.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"state_labels_enabled": schema.BoolAttribute{
+				Description: "Whether the merge queue applies labels to PRs reflecting their merge queue state.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
+			},
 			"required_statuses": schema.ListAttribute{
 				Description: "Override required status checks. Set to null to revert to branch protection or trunk.yaml defaults; set to [] to explicitly require no statuses.",
 				Optional:    true,
@@ -462,6 +497,10 @@ func (r *mergeQueueResource) ImportState(ctx context.Context, req resource.Impor
 		DirectMergeMode:             types.StringNull(),
 		OptimizationMode:            types.StringNull(),
 		BisectionConcurrency:        types.Int64Null(),
+		ExtensionEnabled:            types.BoolNull(),
+		EnqueueingLabel:             types.StringNull(),
+		LabelCommandsEnabled:        types.BoolNull(),
+		StateLabelsEnabled:          types.BoolNull(),
 		RequiredStatuses:            types.ListNull(types.StringType),
 	}
 

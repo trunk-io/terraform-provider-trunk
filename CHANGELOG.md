@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `trunk_merge_queue`: support for `extension_enabled`, `enqueueing_label`, `label_commands_enabled`, and `state_labels_enabled` attributes
 - `trunk_merge_queue` resource for managing Trunk merge queues
   - Full CRUD operations (create, read, update, delete)
   - Import support via `terraform import`

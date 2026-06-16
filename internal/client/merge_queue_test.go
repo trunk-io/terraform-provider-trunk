@@ -28,6 +28,10 @@ func testQueue() Queue {
 		DirectMergeMode:             "off",
 		OptimizationMode:            "off",
 		BisectionConcurrency:        1,
+		ExtensionEnabled:            false,
+		EnqueueingLabel:             "",
+		LabelCommandsEnabled:        false,
+		StateLabelsEnabled:          false,
 	}
 }
 
@@ -147,6 +151,10 @@ func TestGetQueue_AllFields(t *testing.T) {
 			DirectMergeMode:             "off",
 			OptimizationMode:            "bisection_skip_redundant_tests",
 			BisectionConcurrency:        5,
+			ExtensionEnabled:            true,
+			EnqueueingLabel:             "merge-queue",
+			LabelCommandsEnabled:        true,
+			StateLabelsEnabled:          true,
 			RequiredStatuses:            &statuses,
 		}
 		_ = json.NewEncoder(w).Encode(q)
@@ -185,6 +193,18 @@ func TestGetQueue_AllFields(t *testing.T) {
 	}
 	if queue.BisectionConcurrency != 5 {
 		t.Errorf("BisectionConcurrency = %d, want 5", queue.BisectionConcurrency)
+	}
+	if !queue.ExtensionEnabled {
+		t.Error("ExtensionEnabled = false, want true")
+	}
+	if queue.EnqueueingLabel != "merge-queue" {
+		t.Errorf("EnqueueingLabel = %q, want %q", queue.EnqueueingLabel, "merge-queue")
+	}
+	if !queue.LabelCommandsEnabled {
+		t.Error("LabelCommandsEnabled = false, want true")
+	}
+	if !queue.StateLabelsEnabled {
+		t.Error("StateLabelsEnabled = false, want true")
 	}
 	if queue.RequiredStatuses == nil || len(*queue.RequiredStatuses) != 2 {
 		t.Fatalf("RequiredStatuses = %v, want 2 elements", queue.RequiredStatuses)
@@ -254,6 +274,7 @@ func TestUpdateQueue_OmitsNilFields(t *testing.T) {
 	for _, field := range []string{
 		"mode", "concurrency", "state", "mergeMethod", "batch",
 		"deleteRequiredStatuses", "testingTimeoutMinutes", "requiredStatuses",
+		"extensionEnabled", "enqueueingLabel", "labelCommandsEnabled", "stateLabelsEnabled",
 	} {
 		if _, present := rawBody[field]; present {
 			t.Errorf("field %q should be absent when nil, but was present in request body", field)
@@ -274,14 +295,22 @@ func TestUpdateQueue_IncludesNonNilFields(t *testing.T) {
 	concurrency := 3
 	mergeMethod := "squash"
 	batch := true
+	extensionEnabled := true
+	enqueueingLabel := "merge-queue"
+	labelCommandsEnabled := true
+	stateLabelsEnabled := true
 	c := newTestClient("key", server.URL)
 	if _, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
-		Repo:         Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
-		TargetBranch: "main",
-		Mode:         &mode,
-		Concurrency:  &concurrency,
-		MergeMethod:  &mergeMethod,
-		Batch:        &batch,
+		Repo:                 Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
+		TargetBranch:         "main",
+		Mode:                 &mode,
+		Concurrency:          &concurrency,
+		MergeMethod:          &mergeMethod,
+		Batch:                &batch,
+		ExtensionEnabled:     &extensionEnabled,
+		EnqueueingLabel:      &enqueueingLabel,
+		LabelCommandsEnabled: &labelCommandsEnabled,
+		StateLabelsEnabled:   &stateLabelsEnabled,
 	}); err != nil {
 		t.Fatalf("UpdateQueue error: %v", err)
 	}
@@ -296,6 +325,18 @@ func TestUpdateQueue_IncludesNonNilFields(t *testing.T) {
 	}
 	if rawBody["batch"] != true {
 		t.Errorf("batch = %v, want true", rawBody["batch"])
+	}
+	if rawBody["extensionEnabled"] != true {
+		t.Errorf("extensionEnabled = %v, want true", rawBody["extensionEnabled"])
+	}
+	if rawBody["enqueueingLabel"] != "merge-queue" {
+		t.Errorf("enqueueingLabel = %v, want %q", rawBody["enqueueingLabel"], "merge-queue")
+	}
+	if rawBody["labelCommandsEnabled"] != true {
+		t.Errorf("labelCommandsEnabled = %v, want true", rawBody["labelCommandsEnabled"])
+	}
+	if rawBody["stateLabelsEnabled"] != true {
+		t.Errorf("stateLabelsEnabled = %v, want true", rawBody["stateLabelsEnabled"])
 	}
 }
 

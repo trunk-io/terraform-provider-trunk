@@ -36,6 +36,10 @@ type mergeQueueResourceModel struct {
 	DirectMergeMode             types.String `tfsdk:"direct_merge_mode"`
 	OptimizationMode            types.String `tfsdk:"optimization_mode"`
 	BisectionConcurrency        types.Int64  `tfsdk:"bisection_concurrency"`
+	ExtensionEnabled            types.Bool   `tfsdk:"extension_enabled"`
+	EnqueueingLabel             types.String `tfsdk:"enqueueing_label"`
+	LabelCommandsEnabled        types.Bool   `tfsdk:"label_commands_enabled"`
+	StateLabelsEnabled          types.Bool   `tfsdk:"state_labels_enabled"`
 	RequiredStatuses            types.List   `tfsdk:"required_statuses"`
 }
 
@@ -135,6 +139,22 @@ func (m *mergeQueueResourceModel) toUpdateRequest(config *mergeQueueResourceMode
 		v := int(m.BisectionConcurrency.ValueInt64())
 		req.BisectionConcurrency = &v
 	}
+	if !config.ExtensionEnabled.IsNull() {
+		v := m.ExtensionEnabled.ValueBool()
+		req.ExtensionEnabled = &v
+	}
+	if !config.EnqueueingLabel.IsNull() {
+		v := m.EnqueueingLabel.ValueString()
+		req.EnqueueingLabel = &v
+	}
+	if !config.LabelCommandsEnabled.IsNull() {
+		v := m.LabelCommandsEnabled.ValueBool()
+		req.LabelCommandsEnabled = &v
+	}
+	if !config.StateLabelsEnabled.IsNull() {
+		v := m.StateLabelsEnabled.ValueBool()
+		req.StateLabelsEnabled = &v
+	}
 
 	// required_statuses: null in config means revert to branch protection / trunk.yaml defaults.
 	if config.RequiredStatuses.IsNull() {
@@ -184,6 +204,10 @@ func (m *mergeQueueResourceModel) fromQueue(q *client.Queue) {
 	m.DirectMergeMode = types.StringValue(q.DirectMergeMode)
 	m.OptimizationMode = types.StringValue(q.OptimizationMode)
 	m.BisectionConcurrency = types.Int64Value(int64(q.BisectionConcurrency))
+	m.ExtensionEnabled = types.BoolValue(q.ExtensionEnabled)
+	m.EnqueueingLabel = types.StringValue(q.EnqueueingLabel)
+	m.LabelCommandsEnabled = types.BoolValue(q.LabelCommandsEnabled)
+	m.StateLabelsEnabled = types.BoolValue(q.StateLabelsEnabled)
 
 	if q.RequiredStatuses != nil {
 		elems := make([]attr.Value, len(*q.RequiredStatuses))
