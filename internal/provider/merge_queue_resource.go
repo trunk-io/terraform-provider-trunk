@@ -289,6 +289,17 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 					boolplanmodifier.UseStateForUnknown(),
 				},
 			},
+			"not_ready_timeout_hours": schema.Int64Attribute{
+				Description: "Hours a PR can wait to enter the queue after submission before being automatically cancelled. Set to 0 to disable.",
+				Optional:    true,
+				Computed:    true,
+				Validators: []validator.Int64{
+					int64validator.AtLeast(0),
+				},
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
+			},
 			"required_statuses": schema.ListAttribute{
 				Description: "Override required status checks. Set to null to revert to branch protection or trunk.yaml defaults; set to [] to explicitly require no statuses.",
 				Optional:    true,
@@ -501,6 +512,7 @@ func (r *mergeQueueResource) ImportState(ctx context.Context, req resource.Impor
 		EnqueueingLabel:             types.StringNull(),
 		LabelCommandsEnabled:        types.BoolNull(),
 		StateLabelsEnabled:          types.BoolNull(),
+		NotReadyTimeoutHours:        types.Int64Null(),
 		RequiredStatuses:            types.ListNull(types.StringType),
 	}
 
