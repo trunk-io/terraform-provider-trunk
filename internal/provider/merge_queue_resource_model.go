@@ -40,6 +40,7 @@ type mergeQueueResourceModel struct {
 	EnqueueingLabel             types.String `tfsdk:"enqueueing_label"`
 	LabelCommandsEnabled        types.Bool   `tfsdk:"label_commands_enabled"`
 	StateLabelsEnabled          types.Bool   `tfsdk:"state_labels_enabled"`
+	NotReadyTimeoutHours        types.Int64  `tfsdk:"not_ready_timeout_hours"`
 	RequiredStatuses            types.List   `tfsdk:"required_statuses"`
 }
 
@@ -155,6 +156,10 @@ func (m *mergeQueueResourceModel) toUpdateRequest(config *mergeQueueResourceMode
 		v := m.StateLabelsEnabled.ValueBool()
 		req.StateLabelsEnabled = &v
 	}
+	if !config.NotReadyTimeoutHours.IsNull() {
+		v := int(m.NotReadyTimeoutHours.ValueInt64())
+		req.NotReadyTimeoutHours = &v
+	}
 
 	// required_statuses: null in config means revert to branch protection / trunk.yaml defaults.
 	if config.RequiredStatuses.IsNull() {
@@ -208,6 +213,7 @@ func (m *mergeQueueResourceModel) fromQueue(q *client.Queue) {
 	m.EnqueueingLabel = types.StringValue(q.EnqueueingLabel)
 	m.LabelCommandsEnabled = types.BoolValue(q.LabelCommandsEnabled)
 	m.StateLabelsEnabled = types.BoolValue(q.StateLabelsEnabled)
+	m.NotReadyTimeoutHours = types.Int64Value(int64(q.NotReadyTimeoutHours))
 
 	if q.RequiredStatuses != nil {
 		elems := make([]attr.Value, len(*q.RequiredStatuses))

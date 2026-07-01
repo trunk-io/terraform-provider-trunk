@@ -36,6 +36,7 @@ Manages a Trunk merge queue.
 - `label_commands_enabled` (Boolean) Whether label-based commands (e.g. enqueue/dequeue via labels) are enabled on the merge queue.
 - `merge_method` (String) Merge method: "merge_commit", "squash", or "rebase".
 - `mode` (String) Queue mode: "single" or "parallel".
+- `not_ready_timeout_hours` (Number) Maximum hours a PR can wait to enter the queue after submission before being automatically cancelled. Set to 0 to disable.
 - `optimization_mode` (String) Optimization mode: "off" or "bisection_skip_redundant_tests".
 - `pending_failure_depth` (Number) Number of PRs below a failure to wait for before eviction.
 - `required_statuses` (List of String) Override required status checks. Set to null to revert to branch protection or trunk.yaml defaults; set to [] to explicitly require no statuses.

@@ -112,6 +112,7 @@ All optional attributes are also `Computed: true` because the API always returns
 | `label_commands_enabled`          | bool   | --          | Whether label-based commands are enabled           |
 | `state_labels_enabled`            | bool   | --          | Whether MQ applies state labels to PRs             |
 | `required_statuses`               | list   | --          | Override required status checks                    |
+| `not_ready_timeout_hours`         | int    | --          | Cancel PRs that remain unmergeable after this time |
 
 **Note on `required_statuses`:** This field distinguishes three states:
 
