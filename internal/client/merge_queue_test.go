@@ -32,6 +32,7 @@ func testQueue() Queue {
 		EnqueueingLabel:             "",
 		LabelCommandsEnabled:        false,
 		StateLabelsEnabled:          false,
+		NotReadyTimeoutHours:        0,
 	}
 }
 
@@ -155,6 +156,7 @@ func TestGetQueue_AllFields(t *testing.T) {
 			EnqueueingLabel:             "merge-queue",
 			LabelCommandsEnabled:        true,
 			StateLabelsEnabled:          true,
+			NotReadyTimeoutHours:        48,
 			RequiredStatuses:            &statuses,
 		}
 		_ = json.NewEncoder(w).Encode(q)
@@ -205,6 +207,9 @@ func TestGetQueue_AllFields(t *testing.T) {
 	}
 	if !queue.StateLabelsEnabled {
 		t.Error("StateLabelsEnabled = false, want true")
+	}
+	if queue.NotReadyTimeoutHours != 48 {
+		t.Errorf("NotReadyTimeoutHours = %d, want 48", queue.NotReadyTimeoutHours)
 	}
 	if queue.RequiredStatuses == nil || len(*queue.RequiredStatuses) != 2 {
 		t.Fatalf("RequiredStatuses = %v, want 2 elements", queue.RequiredStatuses)
@@ -274,7 +279,7 @@ func TestUpdateQueue_OmitsNilFields(t *testing.T) {
 	for _, field := range []string{
 		"mode", "concurrency", "state", "mergeMethod", "batch",
 		"deleteRequiredStatuses", "testingTimeoutMinutes", "requiredStatuses",
-		"extensionEnabled", "enqueueingLabel", "labelCommandsEnabled", "stateLabelsEnabled",
+		"extensionEnabled", "enqueueingLabel", "labelCommandsEnabled", "stateLabelsEnabled", "notReadyTimeoutHours",
 	} {
 		if _, present := rawBody[field]; present {
 			t.Errorf("field %q should be absent when nil, but was present in request body", field)
@@ -299,6 +304,7 @@ func TestUpdateQueue_IncludesNonNilFields(t *testing.T) {
 	enqueueingLabel := "merge-queue"
 	labelCommandsEnabled := true
 	stateLabelsEnabled := true
+	notReadyTimeoutHours := 24
 	c := newTestClient("key", server.URL)
 	if _, err := c.UpdateQueue(context.Background(), UpdateQueueRequest{
 		Repo:                 Repo{Host: "github.com", Owner: "my-org", Name: "my-repo"},
@@ -311,6 +317,7 @@ func TestUpdateQueue_IncludesNonNilFields(t *testing.T) {
 		EnqueueingLabel:      &enqueueingLabel,
 		LabelCommandsEnabled: &labelCommandsEnabled,
 		StateLabelsEnabled:   &stateLabelsEnabled,
+		NotReadyTimeoutHours: &notReadyTimeoutHours,
 	}); err != nil {
 		t.Fatalf("UpdateQueue error: %v", err)
 	}
@@ -337,6 +344,9 @@ func TestUpdateQueue_IncludesNonNilFields(t *testing.T) {
 	}
 	if rawBody["stateLabelsEnabled"] != true {
 		t.Errorf("stateLabelsEnabled = %v, want true", rawBody["stateLabelsEnabled"])
+	}
+	if rawBody["notReadyTimeoutHours"] != float64(24) {
+		t.Errorf("notReadyTimeoutHours = %v, want 24", rawBody["notReadyTimeoutHours"])
 	}
 }
 

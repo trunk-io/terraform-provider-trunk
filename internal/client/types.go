@@ -37,6 +37,7 @@ type Queue struct {
 	EnqueueingLabel             string `json:"enqueueingLabel"`
 	LabelCommandsEnabled        bool   `json:"labelCommandsEnabled"`
 	StateLabelsEnabled          bool   `json:"stateLabelsEnabled"`
+	NotReadyTimeoutHours        int    `json:"notReadyTimeoutHours"`
 
 	// RequiredStatuses is null when no manual override is set (uses branch protection / trunk.yaml defaults).
 	RequiredStatuses *[]string `json:"requiredStatuses"`
@@ -96,6 +97,7 @@ type UpdateQueueRequest struct {
 	EnqueueingLabel             *string   `json:"enqueueingLabel,omitempty"`
 	LabelCommandsEnabled        *bool     `json:"labelCommandsEnabled,omitempty"`
 	StateLabelsEnabled          *bool     `json:"stateLabelsEnabled,omitempty"`
+	NotReadyTimeoutHours        *int      `json:"notReadyTimeoutHours,omitempty"`
 	RequiredStatuses            *[]string `json:"requiredStatuses,omitempty"`
 
 	// DeleteRequiredStatuses reverts required statuses to branch protection / trunk.yaml defaults
