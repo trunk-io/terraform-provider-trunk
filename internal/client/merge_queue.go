@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -34,6 +35,11 @@ func (c *Client) UpdateQueue(ctx context.Context, p UpdateParams) (*Queue, error
 	if err != nil {
 		return nil, err
 	}
+	// GetQueue falls back to the branch when the ID is gone. Writing to that queue would change one
+	// Terraform doesn't know about, so refuse before writing.
+	if p.Ref.ID != "" && current.ID != "" && current.ID != p.Ref.ID {
+		return nil, &QueueReplacedError{OldID: p.Ref.ID, NewID: current.ID}
+	}
 	if current.State == StateSwitchingModes {
 		return nil, fmt.Errorf("%w: run apply again once the switch finishes", ErrSwitchingModes)
 	}
@@ -62,24 +68,28 @@ func changed(want *string, have string) *string {
 	return want
 }
 
-// createFailed handles a create request that failed with something other than a conflict. The
-// request may still have created the queue (a lost response, or a server error after the write),
-// so it looks for it: a queue found on the branch is returned with the error, for the caller to
-// record. A conflict from a retry is not possible because creates aren't retried on 5xx.
+// createFailed handles a create request that failed with something other than a conflict. After
+// a server error or a lost response the request may still have created the queue, so it looks for
+// one to return with the error, for the caller to record. A 4xx was refused before any write (v2
+// checks permissions and input before conflicts), so a queue found then isn't this request's.
 func (c *Client) createFailed(ctx context.Context, ref QueueRef, err error) (*Queue, error) {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.StatusCode < 500 {
+		return nil, err
+	}
 	q, getErr := c.GetQueue(ctx, ref)
 	if getErr != nil {
 		return nil, err
 	}
-	return q, fmt.Errorf("the request to create the merge queue failed, but the queue exists: %w", err)
+	return q, fmt.Errorf("the request to create it failed, but it exists: %w", err)
 }
 
-// afterCreate wraps a failure that happened once the queue already existed, attaching its
-// current state when it can be read.
+// afterCreate wraps a failure that happened once the queue existed, attaching its current state.
+// If the queue can't be read either, the error wraps ErrCreatedNotRecorded.
 func (c *Client) afterCreate(ctx context.Context, ref QueueRef, err error) (*Queue, error) {
 	q, getErr := c.GetQueue(ctx, ref)
 	if getErr != nil {
-		q = nil
+		return nil, fmt.Errorf("%w: %w", ErrCreatedNotRecorded, err)
 	}
-	return q, fmt.Errorf("the merge queue was created, but configuring it failed: %w", err)
+	return q, err
 }

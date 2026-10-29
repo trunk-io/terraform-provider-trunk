@@ -339,6 +339,10 @@ func TestMergeQueue_validation(t *testing.T) {
 				ExpectError: regexp.MustCompile(`merge_method`),
 			},
 			{
+				Config:      p + queueConfig(`required_statuses = [""]`),
+				ExpectError: regexp.MustCompile(`required_statuses`),
+			},
+			{
 				Config:      p + queueConfig(`batching_rules = [{ target_pattern = "*", policy = "isolate" }]`),
 				ExpectError: regexp.MustCompile(`target_pattern`),
 			},

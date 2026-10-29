@@ -47,7 +47,7 @@ A change made in the Trunk app or through the API to a setting in your configura
 
 ## Switching modes
 
-Changing `mode` on an existing queue starts a switch: the queue drains, accepting no new pull requests, and switches once it is empty. Until then Terraform shows the new mode and refuses any change to the queue, since changing its state would abandon the switch. Apply again once the switch finishes.
+Changing `mode` on an existing queue starts a switch: the queue drains, accepting no new pull requests, and switches once it is empty. Until then Terraform shows the new mode and refuses any change to the queue, since changing its state would abandon the switch. Apply again once the switch finishes. To cancel a switch, use the Trunk app.
 
 ## Deleting a queue
 
@@ -64,8 +64,8 @@ A queue that still has pull requests can't be deleted. Set `state = "draining"`,
 ### Optional
 
 - `batch` (Boolean) Test several pull requests together as one batch.
-- `batching_max_wait_time_minutes` (Number) Minutes to wait for a batch to reach `batching_min_size` before testing it anyway. `0` never waits; `0` needs an API key, since the v1 API requires at least 1.
-- `batching_min_size` (Number) How many pull requests a batch waits for.
+- `batching_max_wait_time_minutes` (Number) Minutes to wait for a batch to reach `batching_min_size` before testing it anyway. `0` doesn't wait (needs an API key; v1 requires at least 1).
+- `batching_min_size` (Number) Target batch size: how many pull requests a batch waits for, and the most it holds.
 - `batching_rules` (Attributes Set) Rules that change how pull requests are batched based on the build targets they impact. Only applies in `parallel` mode with impacted targets uploaded. Set to `[]` to remove every rule. (see [below for nested schema](#nestedatt--batching_rules))
 - `bisection_concurrency` (Number) How many tests bisecting a failed batch may run at once, separate from `concurrency`.
 - `can_optimistically_merge` (Boolean) When a pull request passes before those ahead of it finish testing, merge it and them together, since its tests included their changes.
@@ -76,9 +76,9 @@ A queue that still has pull requests can't be deleted. Set `state = "draining"`,
 - `direct_merge_mode` (String) `always` merges a pull request right away when it is already based on the tip of the target branch, the queue is empty and its tests passed; `off` always tests it in the queue.
 - `enqueueing_label` (String) The GitHub label that enqueues a pull request when `label_commands_enabled` is true.
 - `extension_enabled` (Boolean) Show the Trunk browser extension's merge queue controls on pull requests into this branch.
-- `label_commands_enabled` (Boolean) Let a GitHub label enqueue a pull request (see `enqueueing_label`).
+- `label_commands_enabled` (Boolean) Let a GitHub label enqueue a pull request, and removing it dequeue it (see `enqueueing_label`).
 - `merge_method` (String) How pull requests are merged: `merge_commit`, `squash`, or `rebase`.
-- `mode` (String) `single` keeps one line, testing each pull request with the changes ahead of it. `parallel` splits it into independent lines by impacted targets, which CI must upload. Changing it on an existing queue starts a mode switch.
+- `mode` (String) `single` tests pull requests in one line, each with the changes ahead of it. `parallel` splits the queue into independent lines by impacted targets, which CI must upload. Changing it on an existing queue starts a mode switch.
 - `not_ready_timeout_hours` (Number) Hours a submitted pull request may stay unable to enter the queue before it is cancelled (**Stale PR Timeout** in the app). `0` means no timeout.
 - `optimization_mode` (String) `bisection_skip_redundant_tests` (**Skip Redundant Bisection Tests** in the app): while bisecting a failed batch, skip any set of pull requests that already failed in the same bisection. `off` tests every set.
 - `pending_failure_depth` (Number) How many levels of later test runs to wait for before removing a failed pull request. With `can_optimistically_merge`, a later run that passes clears a failure caused by a flaky test. `0` doesn't wait.
@@ -93,7 +93,7 @@ A queue that still has pull requests can't be deleted. Set `state = "draining"`,
 
 - `id` (String) The queue's address, `{host}/{owner}/{name}/{target_branch}`.
 - `managed_state` (String) Whether the queue is managed by Terraform: `manual`, `terraform`, or `terraform_with_drift` (changed outside Terraform since the last apply). Only the v2 API reports it; null with an organization API token.
-- `queue_id` (String) The queue's ID in the v2 API. Null when the provider uses an organization API token (v1), which has no queue IDs.
+- `queue_id` (String) The queue's v2 ID. Null with an organization API token.
 
 <a id="nestedatt--repo"></a>
 ### Nested Schema for `repo`
@@ -122,3 +122,5 @@ terraform import trunk_merge_queue.main github.com/my-org/my-repo/main
 # Or, with an API key, by the queue's v2 ID.
 terraform import trunk_merge_queue.main xK9mP2nQ
 ```
+
+Importing by queue ID records the repository as Trunk spells it. If your configuration's `repo` differs in capitals, import by path instead, or the plan replaces the queue.

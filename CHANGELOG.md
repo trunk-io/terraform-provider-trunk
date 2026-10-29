@@ -11,7 +11,7 @@ All notable changes to this project are documented here. The format follows [Kee
 Change the version constraint to `~> 2.0` and run `terraform init -upgrade`. Existing state loads as is, the first plan is empty, and the organization API token keeps working.
 
 - **Leaving out `required_statuses` no longer clears the queue's override.** 1.x reset it on every apply. To remove an override, set `required_statuses = []`. (`[]` never meant "require no checks": 1.x documented that, but the API ignored an empty list.)
-- **`required_statuses` is a set**, so order doesn't matter.
+- **`required_statuses` is a set**, so order doesn't matter. References such as `required_statuses[0]` need `tolist()`.
 - **`base_url` is the API host**, such as `https://api.trunk.io`. A value ending in `/v1` still works.
 - **To use an API key**, swap it in for the token. Nothing else changes; `queue_id` and `managed_state` fill in on the next refresh.
 
@@ -29,8 +29,9 @@ Change the version constraint to `~> 2.0` and run `terraform init -upgrade`. Exi
 - A refresh with a wrong or revoked organization API token, or for a repository Trunk can't find, removed the queue from state. v1 answers both as "not found"; the provider now checks, and reports the token or repository.
 - While a queue switched modes, the next apply sent its state back, which abandoned the switch. Terraform now shows the new mode and refuses changes until the switch finishes.
 - A retried mode change could leave a queue switching modes for good. Mode changes are no longer retried after a server error.
-- A create that failed after the queue was made left nothing in state, so the next apply failed with "already exists". The queue is now recorded; Terraform replaces it on the next apply, or `terraform untaint` keeps it.
-- Creates are no longer retried after a server error, which could turn a lost response into "already exists". Rate-limited requests are retried.
+- A create that failed after the queue was made left nothing in state, so the next apply failed with "already exists". After a server error the provider now looks for the queue and records it; Terraform replaces it on the next apply, or `terraform untaint` keeps it.
+- Creates are no longer retried after a server error, which could turn a lost response into "already exists".
+- Requests that hit the rate limit (429) are retried.
 - The "queue is not empty" error and the example used uppercase values (`DRAINING`, `SQUASH`) the provider rejects.
 - A v1 401 now says the repository may not be connected to Trunk, since v1 also answers that way for an unknown repository.
 

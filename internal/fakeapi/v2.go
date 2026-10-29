@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -103,6 +105,15 @@ func applyV2(q *Queue, c *v2Config) string {
 		return "a value is out of range"
 	case c.NotReadyTimeoutMinutes != nil && *c.NotReadyTimeoutMinutes%60 != 0:
 		return "notReadyTimeoutMinutes must be a whole number of hours"
+	case c.RequiredStatuses != nil && len(*c.RequiredStatuses) > 100:
+		return "requiredStatuses takes at most 100 entries"
+	}
+	if c.RequiredStatuses != nil {
+		for _, st := range *c.RequiredStatuses {
+			if st == "" {
+				return "requiredStatuses entries can't be empty"
+			}
+		}
 	}
 	setInt(&q.Concurrency, c.Concurrency)
 	setInt(&q.BisectionConcurrency, c.BisectionConcurrency)
@@ -150,23 +161,52 @@ func (s *Server) serveV2(w http.ResponseWriter, r *http.Request, raw json.RawMes
 
 	switch {
 	case r.Method == http.MethodGet && path == "repositories":
+		// Exact match on the name, every record, ordered by ID, like trunk2.
 		providerURL := strings.TrimPrefix(r.URL.Query().Get("providerUrl"), "https://")
 		id, ok := s.repos[providerURL]
 		if !ok {
 			v2Error(w, http.StatusNotFound, "PROVIDER_URL_NOT_FOUND", "no repository matches providerUrl")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": []any{map[string]any{"id": id}}, "hasMore": false})
+		ids := append(append([]string{}, s.dupes[providerURL]...), id)
+		sort.Strings(ids)
+		data := []any{}
+		for _, id := range ids {
+			data = append(data, map[string]any{"id": id})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": data, "hasMore": false, "nextCursor": nil})
 
 	case r.Method == http.MethodGet && path == "merge-queues":
 		repoID, branch := r.URL.Query().Get("repositoryId"), r.URL.Query().Get("targetBranch")
-		data := []any{}
-		for _, q := range s.queues {
+		limit, err := pageLimit(r)
+		if err != "" {
+			v2Error(w, http.StatusBadRequest, "VALIDATION_FAILED", err)
+			return
+		}
+		var ids []string
+		for id, q := range s.queues {
 			if (repoID == "" || s.repos[q.Host+"/"+q.Owner+"/"+q.Name] == repoID) && (branch == "" || q.Branch == branch) {
-				data = append(data, s.v2Body(q))
+				ids = append(ids, id)
 			}
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"data": data, "hasMore": false})
+		sort.Strings(ids)
+		start := 0
+		if c := r.URL.Query().Get("cursor"); c != "" {
+			start, _ = strconv.Atoi(strings.TrimPrefix(c, "c"))
+		}
+		if s.MaxPageSize > 0 {
+			limit = min(limit, s.MaxPageSize)
+		}
+		end := min(start+limit, len(ids))
+		data := []any{}
+		for _, id := range ids[min(start, len(ids)):end] {
+			data = append(data, s.v2Body(s.queues[id]))
+		}
+		var next any
+		if end < len(ids) {
+			next = fmt.Sprintf("c%d", end)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": data, "hasMore": end < len(ids), "nextCursor": next})
 
 	case r.Method == http.MethodPost && path == "merge-queues":
 		var req struct {
@@ -179,6 +219,11 @@ func (s *Server) serveV2(w http.ResponseWriter, r *http.Request, raw json.RawMes
 		}
 		if err := strictDecode(raw, &req); err != nil {
 			v2Error(w, http.StatusBadRequest, "VALIDATION_FAILED", err.Error())
+			return
+		}
+		// Like trunk2: input, then the repository, then conflicts.
+		if _, ok := modeFromV2[deref(req.Mode, "queue")]; !ok || !inRange(req.Concurrency, 1, 1000) {
+			v2Error(w, http.StatusBadRequest, "VALIDATION_FAILED", "mode or concurrency is invalid")
 			return
 		}
 		var repo string
@@ -198,18 +243,7 @@ func (s *Server) serveV2(w http.ResponseWriter, r *http.Request, raw json.RawMes
 		rp := strings.SplitN(repo, "/", 3)
 		s.nextID++
 		q := newQueue(fmt.Sprintf("mq%d", s.nextID), rp[0], rp[1], rp[2], req.TargetBranch)
-		if req.Mode != nil {
-			mode, ok := modeFromV2[*req.Mode]
-			if !ok {
-				v2Error(w, http.StatusBadRequest, "VALIDATION_FAILED", "mode must be queue or graph")
-				return
-			}
-			q.Mode = mode
-		}
-		if !inRange(req.Concurrency, 1, 1000) {
-			v2Error(w, http.StatusBadRequest, "VALIDATION_FAILED", "concurrency is out of range")
-			return
-		}
+		q.Mode = modeFromV2[deref(req.Mode, "queue")]
 		setInt(&q.Concurrency, req.Concurrency)
 		if fromTerraform(r) {
 			q.ManagedState = "terraform"
@@ -284,6 +318,26 @@ func (s *Server) serveV2(w http.ResponseWriter, r *http.Request, raw json.RawMes
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func deref(v *string, fallback string) string {
+	if v == nil {
+		return fallback
+	}
+	return *v
+}
+
+// pageLimit reads limit as trunk2 does: 1 to 100, default 25.
+func pageLimit(r *http.Request) (int, string) {
+	raw := r.URL.Query().Get("limit")
+	if raw == "" {
+		return 25, ""
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 || n > 100 {
+		return 0, "limit must be 1 to 100"
+	}
+	return n, ""
 }
 
 func strictDecode(raw json.RawMessage, v any) error {

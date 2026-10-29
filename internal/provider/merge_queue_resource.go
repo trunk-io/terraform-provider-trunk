@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -99,7 +100,7 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseNonNullStateForUnknown()},
 			},
 			"queue_id": schema.StringAttribute{
-				Description:   "The queue's ID in the v2 API. Null when the provider uses an organization API token (v1), which has no queue IDs.",
+				Description:   "The queue's v2 ID. Null with an organization API token.",
 				Computed:      true,
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseNonNullStateForUnknown()},
 			},
@@ -120,7 +121,7 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"target_branch": identity("The branch the queue merges into. Changing it replaces the queue."),
 
 			"mode": optionalString(
-				"`single` keeps one line, testing each pull request with the changes ahead of it. `parallel` splits it into independent lines "+
+				"`single` tests pull requests in one line, each with the changes ahead of it. `parallel` splits the queue into independent lines "+
 					"by impacted targets, which CI must upload. Changing it on an existing queue starts a mode switch.",
 				stringvalidator.OneOf(client.ModeSingle, client.ModeParallel)),
 			"state": optionalString(
@@ -139,9 +140,9 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"can_optimistically_merge": optionalBool("When a pull request passes before those ahead of it finish testing, merge it and them together, since its tests included their changes."),
 			"batch":                    optionalBool("Test several pull requests together as one batch."),
 			"batching_max_wait_time_minutes": optionalInt(
-				"Minutes to wait for a batch to reach `batching_min_size` before testing it anyway. `0` never waits; `0` needs an API key, since the v1 API requires at least 1.",
+				"Minutes to wait for a batch to reach `batching_min_size` before testing it anyway. `0` doesn't wait (needs an API key; v1 requires at least 1).",
 				int64validator.AtLeast(0)),
-			"batching_min_size": optionalInt("How many pull requests a batch waits for.", int64validator.AtLeast(1)),
+			"batching_min_size": optionalInt("Target batch size: how many pull requests a batch waits for, and the most it holds.", int64validator.AtLeast(1)),
 			"batching_rules": schema.SetNestedAttribute{
 				Description: "Rules that change how pull requests are batched based on the build targets they impact. " +
 					"Only applies in `parallel` mode with impacted targets uploaded. Set to `[]` to remove every rule.",
@@ -175,7 +176,7 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"commands_enabled":       optionalBool("Accept `/trunk` commands in pull request comments."),
 			"status_check_enabled":   optionalBool("Post a GitHub check on queued pull requests."),
 			"extension_enabled":      optionalBool("Show the Trunk browser extension's merge queue controls on pull requests into this branch."),
-			"label_commands_enabled": optionalBool("Let a GitHub label enqueue a pull request (see `enqueueing_label`)."),
+			"label_commands_enabled": optionalBool("Let a GitHub label enqueue a pull request, and removing it dequeue it (see `enqueueing_label`)."),
 			"state_labels_enabled":   optionalBool("Label pull requests with their merge queue state."),
 			"enqueueing_label": optionalString("The GitHub label that enqueues a pull request when `label_commands_enabled` is true.",
 				stringvalidator.LengthAtLeast(1)),
@@ -196,6 +197,7 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				ElementType:   types.StringType,
 				Optional:      true,
 				Computed:      true,
+				Validators:    []validator.Set{setvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1))},
 				PlanModifiers: []planmodifier.Set{setplanmodifier.UseNonNullStateForUnknown()},
 			},
 		},
@@ -296,8 +298,12 @@ func (r *mergeQueueResource) Create(ctx context.Context, req resource.CreateRequ
 	switch {
 	case err != nil && queue != nil:
 		resp.Diagnostics.AddError("Merge queue created but not fully configured",
-			fmt.Sprintf("For %s, %s. Terraform marks the queue as tainted, so the next apply replaces it. To finish configuring "+
-				"it in place instead, run `terraform untaint <resource address>` and apply.", describe(&plan), err))
+			fmt.Sprintf("Configuring the merge queue for %s failed: %s. Terraform marks it tainted, so the next apply replaces it. "+
+				"To keep it, run `terraform untaint <resource address>` and apply.", describe(&plan), err))
+	case errors.Is(err, client.ErrCreatedNotRecorded):
+		resp.Diagnostics.AddError("Merge queue created but not recorded",
+			fmt.Sprintf("The merge queue for %s was created, but configuring it failed and it couldn't be read back: %s. "+
+				"Import it before applying again:\n\n  terraform import <resource address> %q", describe(&plan), err, importID(&plan)))
 	case err != nil:
 		resp.Diagnostics.AddError("Error creating merge queue", fmt.Sprintf("Could not create the merge queue for %s: %s", describe(&plan), err))
 	}
@@ -347,14 +353,15 @@ func (r *mergeQueueResource) Update(ctx context.Context, req resource.UpdateRequ
 	}
 
 	queue, err := r.client.UpdateQueue(ctx, params)
-	if err != nil {
-		resp.Diagnostics.AddError("Error updating merge queue", fmt.Sprintf("Could not update the merge queue for %s: %s", describe(&plan), err))
+	var replaced *client.QueueReplacedError
+	if errors.As(err, &replaced) {
+		resp.Diagnostics.AddError("Merge queue was replaced outside Terraform",
+			fmt.Sprintf("The merge queue for %s now has ID %s, not %s, so nothing was changed. "+
+				"Run `terraform apply -refresh-only` to record it, then apply again.", describe(&plan), replaced.NewID, replaced.OldID))
 		return
 	}
-	if known(prior.QueueID) && queue.ID != "" && queue.ID != prior.QueueID.ValueString() {
-		resp.Diagnostics.AddError("Merge queue was replaced outside Terraform",
-			fmt.Sprintf("The merge queue for %s now has ID %s, not %s. Run `terraform apply -refresh-only` to record it, then apply again.",
-				describe(&plan), queue.ID, prior.QueueID.ValueString()))
+	if err != nil {
+		resp.Diagnostics.AddError("Error updating merge queue", fmt.Sprintf("Could not update the merge queue for %s: %s", describe(&plan), err))
 		return
 	}
 	state := plan

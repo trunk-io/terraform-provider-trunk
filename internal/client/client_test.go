@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -334,4 +335,117 @@ func TestCreate_failureAfterCommitReturnsQueue(t *testing.T) {
 			t.Fatalf("q = %v, err = %v; want both", q, err)
 		}
 	})
+}
+
+// A create refused with a 4xx never wrote anything, so a queue already on the branch isn't its.
+func TestCreate_refusedDoesNotAdoptExistingQueue(t *testing.T) {
+	eachAPI(t, func(t *testing.T, srv *fakeapi.Server, c *Client) {
+		ctx := context.Background()
+		if _, err := c.CreateQueue(ctx, CreateParams{Repo: widgets, TargetBranch: "main"}); err != nil {
+			t.Fatal(err)
+		}
+		path := map[APIVersion]string{V1: "/v1/createQueue", V2: "/v2/merge-queues"}[c.Version()]
+		srv.FailAfter(http.MethodPost, path, http.StatusForbidden)
+		q, err := c.CreateQueue(ctx, CreateParams{Repo: widgets, TargetBranch: "main"})
+		if err == nil || q != nil {
+			t.Fatalf("q = %v, err = %v; want only an error", q, err)
+		}
+	})
+}
+
+// Updating by a stale ID must not write to the queue now on the branch.
+func TestUpdate_replacedQueueRefusedBeforeWriting(t *testing.T) {
+	srv := fakeapi.New(repoPath)
+	defer srv.Close()
+	c := testClient(fakeapi.V2Key, srv.URL)
+	ctx := context.Background()
+	old, err := c.CreateQueue(ctx, CreateParams{Repo: widgets, TargetBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeleteQueue(ctx, QueueRef{ID: old.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CreateQueue(ctx, CreateParams{Repo: widgets, TargetBranch: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	before := len(srv.Requests())
+	_, err = c.UpdateQueue(ctx, UpdateParams{Ref: QueueRef{ID: old.ID, Repo: widgets, TargetBranch: "main"}, Settings: Settings{Concurrency: ptr(9)}})
+	var replaced *QueueReplacedError
+	if !errors.As(err, &replaced) || replaced.OldID != old.ID {
+		t.Fatalf("err = %v, want QueueReplacedError", err)
+	}
+	for _, r := range srv.Requests()[before:] {
+		if r.Method != http.MethodGet {
+			t.Errorf("wrote %s %s", r.Method, r.Path)
+		}
+	}
+
+	// Deleting by the stale ID succeeds without touching the replacement.
+	if err := c.DeleteQueue(ctx, QueueRef{ID: old.ID, Repo: widgets, TargetBranch: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	if srv.Queue(repoPath, "main") == nil {
+		t.Fatal("deleting the old ID deleted the replacement")
+	}
+}
+
+func TestV2_duplicateRepositoryRecords(t *testing.T) {
+	srv := fakeapi.New(repoPath)
+	defer srv.Close()
+	c := testClient(fakeapi.V2Key, srv.URL)
+	ctx := context.Background()
+	if _, err := c.CreateQueue(ctx, CreateParams{Repo: widgets, TargetBranch: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	srv.AddDuplicateRepo(repoPath)
+	// Reads find the queue even though v2 lists the other record first.
+	if _, err := c.GetQueue(ctx, QueueRef{Repo: widgets, TargetBranch: "main"}); err != nil {
+		t.Fatalf("GetQueue: %v", err)
+	}
+	// A create can't tell which record is meant, so it refuses rather than guess.
+	if _, err := c.CreateQueue(ctx, CreateParams{Repo: widgets, TargetBranch: "dev"}); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("create err = %v, want ambiguous", err)
+	}
+}
+
+// The case-insensitive search reads every page of queues.
+func TestV2_caseInsensitiveSearchFollowsPages(t *testing.T) {
+	srv := fakeapi.New(repoPath, "github.com/acme/other")
+	defer srv.Close()
+	c := testClient(fakeapi.V2Key, srv.URL)
+	ctx := context.Background()
+	other := Repo{Host: "github.com", Owner: "acme", Name: "other"}
+	for _, b := range []string{"a", "b"} {
+		if _, err := c.CreateQueue(ctx, CreateParams{Repo: other, TargetBranch: b}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := c.CreateQueue(ctx, CreateParams{Repo: widgets, TargetBranch: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	srv.MaxPageSize = 1
+	upper := Repo{Host: "github.com", Owner: "ACME", Name: "Widgets"}
+	q, err := c.GetQueue(ctx, QueueRef{Repo: upper, TargetBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q.Repo != upper {
+		t.Errorf("repo = %+v, want the caller's spelling", q.Repo)
+	}
+	if _, err := c.GetQueue(ctx, QueueRef{Repo: Repo{Host: "github.com", Owner: "nobody", Name: "x"}, TargetBranch: "main"}); !errors.Is(err, ErrRepositoryNotFound) {
+		t.Errorf("unknown repo: err = %v", err)
+	}
+}
+
+func TestV2_missingPermissionNamesIt(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":{"code":"INSUFFICIENT_PERMISSIONS","message":"missing manage_queues"}}`))
+	}))
+	defer srv.Close()
+	_, err := testClient(fakeapi.V2Key, srv.URL).GetQueue(context.Background(), QueueRef{ID: "q"})
+	if err == nil || !strings.Contains(err.Error(), "Update Merge Queue settings") || !IsStatus(err, http.StatusForbidden) {
+		t.Fatalf("err = %v", err)
+	}
 }

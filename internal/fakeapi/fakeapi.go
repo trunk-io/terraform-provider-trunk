@@ -84,9 +84,14 @@ type Request struct {
 type Server struct {
 	*httptest.Server
 
+	// MaxPageSize, if set, caps every list page below what the request asked for, so tests can
+	// reach later pages without creating 100 queues.
+	MaxPageSize int
+
 	mu       sync.Mutex
-	repos    map[string]string // "host/owner/name" -> repository ID
-	queues   map[string]*Queue // queue ID -> queue
+	repos    map[string]string   // "host/owner/name" -> repository ID
+	dupes    map[string][]string // "host/owner/name" -> extra, unconnected records for it
+	queues   map[string]*Queue   // queue ID -> queue
 	nextID   int
 	requests []Request
 	failNext map[string][]int // "METHOD /path" -> statuses to answer, in turn, after doing the work
@@ -94,7 +99,7 @@ type Server struct {
 
 // New starts a server that knows the given repositories ("host/owner/name").
 func New(repos ...string) *Server {
-	s := &Server{repos: map[string]string{}, queues: map[string]*Queue{}, failNext: map[string][]int{}}
+	s := &Server{repos: map[string]string{}, dupes: map[string][]string{}, queues: map[string]*Queue{}, failNext: map[string][]int{}}
 	for i, r := range repos {
 		s.repos[r] = fmt.Sprintf("repo-%d", i+1)
 	}
@@ -118,6 +123,14 @@ func (s *Server) Queue(repo, branch string) *Queue {
 		return &c
 	}
 	return nil
+}
+
+// AddDuplicateRepo adds a second record for a repository, as some organizations have. Its ID sorts
+// first, so v2 lists it first.
+func (s *Server) AddDuplicateRepo(repo string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dupes[repo] = append(s.dupes[repo], fmt.Sprintf("repo-0dup%d", len(s.dupes[repo])+1))
 }
 
 // FailAfter makes the next request to method and path do its work and then answer status, as a

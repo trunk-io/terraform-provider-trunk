@@ -166,7 +166,8 @@ func (c *Client) getV1(ctx context.Context, ref QueueRef) (*Queue, error) {
 
 // confirmNotFoundV1 checks a 404 from getQueue, which v1 also returns for a token it doesn't
 // recognize and for a repository it can't find. An updateQueue that changes nothing tells them
-// apart: it answers 401 for those, and 404 only when the queue doesn't exist (so it never writes).
+// apart: it answers 401 for those, and 404 only when the queue doesn't exist. It writes only if the
+// queue was created between the two calls, and then only marks it Terraform-managed.
 func (c *Client) confirmNotFoundV1(ctx context.Context, ref QueueRef) error {
 	err := c.do(ctx, http.MethodPost, "/v1/updateQueue", nil, v1Ref(ref), nil, retrySafe)
 	switch {

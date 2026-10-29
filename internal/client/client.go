@@ -142,8 +142,13 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		}
 		lastErr = c.doOnce(ctx, method, target, bodyBytes, out)
 		if lastErr == nil || !retryable(lastErr, policy) {
-			return lastErr
+			break
 		}
+	}
+	var apiErr *APIError
+	if errors.As(lastErr, &apiErr) && apiErr.Code == "INSUFFICIENT_PERMISSIONS" {
+		// The message names the internal permission; point at the one people pick in the app.
+		return fmt.Errorf("the API key needs the Update Merge Queue settings permission: %w", lastErr)
 	}
 	return lastErr
 }

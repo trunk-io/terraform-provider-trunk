@@ -1,6 +1,9 @@
 package client
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 // Values below use the provider's spelling. The v1 API uses the same spelling; the v2 client
 // translates to and from v2's camelCase enums.
@@ -31,7 +34,20 @@ var (
 	// ErrRepositoryNotFound means the API couldn't find the repository. It is not ErrNotFound:
 	// the queue may well exist, so a caller must not treat it as deleted.
 	ErrRepositoryNotFound = errors.New("repository not found")
+	// ErrCreatedNotRecorded means a create made the queue but it couldn't be read back, so the
+	// caller has nothing to record.
+	ErrCreatedNotRecorded = errors.New("the merge queue was created but couldn't be read back")
 )
+
+// QueueReplacedError means the queue at a reference's repository and branch has a different ID
+// than the reference: it was deleted and recreated outside Terraform.
+type QueueReplacedError struct {
+	OldID, NewID string
+}
+
+func (e *QueueReplacedError) Error() string {
+	return fmt.Sprintf("the merge queue was replaced outside Terraform: it now has ID %s, not %s", e.NewID, e.OldID)
+}
 
 // Repo identifies a repository by its host, owner and name.
 type Repo struct {

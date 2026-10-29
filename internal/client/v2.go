@@ -248,22 +248,28 @@ func v2ConfigFrom(s Settings) v2Config {
 	return cfg
 }
 
-// repositoryID looks up the v2 ID of the repository at host/owner/name. v2 matches the name
-// exactly, where v1 ignores case.
-func (c *Client) repositoryID(ctx context.Context, repo Repo) (string, error) {
+// repositoryIDs looks up the v2 IDs of the repository at host/owner/name. v2 matches the name
+// exactly, where v1 ignores case. Some organizations have more than one record for a repository,
+// so there can be several.
+func (c *Client) repositoryIDs(ctx context.Context, repo Repo) ([]string, error) {
 	q := url.Values{}
 	q.Set("providerUrl", fmt.Sprintf("https://%s/%s/%s", repo.Host, repo.Owner, repo.Name))
+	q.Set("limit", "100")
 	var list v2List[struct {
 		ID string `json:"id"`
 	}]
 	err := c.do(ctx, http.MethodGet, "/v2/repositories", q, nil, &list, retrySafe)
 	if IsStatus(err, http.StatusNotFound) || (err == nil && len(list.Data) == 0) {
-		return "", repositoryNotFound(repo)
+		return nil, repositoryNotFound(repo)
 	}
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return list.Data[0].ID, nil
+	ids := make([]string, 0, len(list.Data))
+	for _, r := range list.Data {
+		ids = append(ids, r.ID)
+	}
+	return ids, nil
 }
 
 func repositoryNotFound(repo Repo) error {
@@ -290,7 +296,7 @@ func (c *Client) getV2(ctx context.Context, ref QueueRef) (*Queue, error) {
 			return q, err
 		}
 	}
-	repoID, err := c.repositoryID(ctx, ref.Repo)
+	repoIDs, err := c.repositoryIDs(ctx, ref.Repo)
 	if errors.Is(err, ErrRepositoryNotFound) {
 		// A configuration written for v1 may differ in case from Trunk's repository name.
 		return c.findV2IgnoringCase(ctx, ref, err)
@@ -298,17 +304,19 @@ func (c *Client) getV2(ctx context.Context, ref QueueRef) (*Queue, error) {
 	if err != nil {
 		return nil, err
 	}
-	q := url.Values{}
-	q.Set("repositoryId", repoID)
-	q.Set("targetBranch", ref.TargetBranch)
-	var list v2List[v2Queue]
-	if err := c.do(ctx, http.MethodGet, "/v2/merge-queues", q, nil, &list, retrySafe); err != nil {
-		return nil, err
+	for _, repoID := range repoIDs {
+		q := url.Values{}
+		q.Set("repositoryId", repoID)
+		q.Set("targetBranch", ref.TargetBranch)
+		var list v2List[v2Queue]
+		if err := c.do(ctx, http.MethodGet, "/v2/merge-queues", q, nil, &list, retrySafe); err != nil {
+			return nil, err
+		}
+		if len(list.Data) > 0 {
+			return list.Data[0].toQueue(ref.Repo), nil
+		}
 	}
-	if len(list.Data) == 0 {
-		return nil, ErrNotFound
-	}
-	return list.Data[0].toQueue(ref.Repo), nil
+	return nil, ErrNotFound
 }
 
 // findV2IgnoringCase looks through every queue in the organization for one on ref's branch in a
@@ -342,10 +350,15 @@ func (c *Client) findV2IgnoringCase(ctx context.Context, ref QueueRef, notFound 
 }
 
 func (c *Client) createV2(ctx context.Context, p CreateParams) (*Queue, error) {
-	repoID, err := c.repositoryID(ctx, p.Repo)
+	repoIDs, err := c.repositoryIDs(ctx, p.Repo)
 	if err != nil {
 		return nil, err
 	}
+	if len(repoIDs) > 1 {
+		return nil, fmt.Errorf("the queue's repository is ambiguous: Trunk has %d records for %s/%s/%s; contact Trunk support",
+			len(repoIDs), p.Repo.Host, p.Repo.Owner, p.Repo.Name)
+	}
+	repoID := repoIDs[0]
 	// Only fields v2 writes with the create itself. It applies bisectionConcurrency and
 	// enqueueingLabel in a second write after creating the queue, so a failure there would leave
 	// a queue behind an error; the PATCH below sends them instead.
@@ -432,7 +445,15 @@ func (c *Client) updateV2(ctx context.Context, current *Queue, mode, state *stri
 }
 
 func (c *Client) deleteV2(ctx context.Context, ref QueueRef) error {
-	q, err := c.getV2(ctx, ref)
+	var q *Queue
+	var err error
+	if ref.ID != "" {
+		// The queue Terraform knows is the one with this ID. If it's gone, so is the resource,
+		// whatever now sits on the branch.
+		q, err = c.getV2ByID(ctx, ref.ID, ref.Repo)
+	} else {
+		q, err = c.getV2(ctx, ref)
+	}
 	if errors.Is(err, ErrNotFound) {
 		return nil
 	}
