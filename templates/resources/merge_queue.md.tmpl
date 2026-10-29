@@ -1,0 +1,34 @@
+---
+page_title: "{{.Name}} {{.Type}} - {{.ProviderName}}"
+subcategory: ""
+description: |-
+{{ .Description | plainmarkdown | trimspace | prefixlines "  " }}
+---
+
+# {{.Name}} ({{.Type}})
+
+{{ .Description | trimspace }}
+
+Only the settings in your configuration are managed. A setting you leave out keeps whatever value the queue has, including one set in the Trunk app.
+
+## Example Usage
+
+{{ tffile "examples/resources/trunk_merge_queue/resource.tf" }}
+
+## Changing settings outside Terraform
+
+Changes made in the Trunk app or through the API show up as differences in the next plan, and the next apply sets them back. With an API key, `managed_state` is `terraform_with_drift` until then.
+
+## Switching modes
+
+Changing `mode` on an existing queue starts a switch that finishes once the queue is empty. Until then the queue's state is switching modes. Terraform shows the new mode and refuses other changes to the queue, since changing its state would abandon the switch. Apply again once the switch finishes.
+
+## Deleting a queue
+
+A queue that still has pull requests can't be deleted. Set `state = "draining"`, apply, and destroy once the queue is empty.
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+{{ codefile "shell" "examples/resources/trunk_merge_queue/import.sh" }}

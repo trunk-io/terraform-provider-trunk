@@ -1,112 +1,140 @@
 package client
 
-import "fmt"
+import "errors"
 
-// Repo identifies a repository in the Trunk API.
+// Values below use the provider's spelling. The v1 API uses the same spelling; the v2 client
+// translates to and from v2's camelCase enums.
+
+const (
+	ModeSingle   = "single"
+	ModeParallel = "parallel"
+
+	StateRunning        = "running"
+	StatePaused         = "paused"
+	StateDraining       = "draining"
+	StateSwitchingModes = "switching_modes"
+
+	ManagedStateManual             = "manual"
+	ManagedStateTerraform          = "terraform"
+	ManagedStateTerraformWithDrift = "terraform_with_drift"
+)
+
+var (
+	// ErrNotFound means the queue (or, on v2, its repository) does not exist.
+	ErrNotFound = errors.New("merge queue not found")
+	// ErrQueueNotEmpty means a delete was refused because pull requests are still queued.
+	ErrQueueNotEmpty = errors.New("merge queue still has pull requests")
+	// ErrSwitchingModes means a change was refused because the queue is between modes.
+	ErrSwitchingModes = errors.New("merge queue is switching modes")
+	// ErrAlreadyExists means a create found a queue already on that branch.
+	ErrAlreadyExists = errors.New("merge queue already exists")
+)
+
+// Repo identifies a repository by its host, owner and name.
 type Repo struct {
-	Host  string `json:"host"`
-	Owner string `json:"owner"`
-	Name  string `json:"name"`
+	Host  string
+	Owner string
+	Name  string
 }
 
-// Queue represents the full state of a Trunk merge queue as returned by the
-// getQueue and updateQueue APIs. All fields use lowercase enum values to match
-// the API (e.g., "running", "single", "squash", "off").
+// QueueRef identifies a merge queue. v1 uses Repo and TargetBranch; v2 uses ID when set and
+// otherwise looks the queue up from Repo and TargetBranch.
+type QueueRef struct {
+	ID           string
+	Repo         Repo
+	TargetBranch string
+}
+
+// BatchingRule changes how pull requests impacting matching targets are batched.
+type BatchingRule struct {
+	TargetPattern string
+	Policy        string
+}
+
+// Queue is a merge queue's full state.
 type Queue struct {
-	Repo         Repo   `json:"repo"`
-	TargetBranch string `json:"targetBranch"`
-	Mode         string `json:"mode"`
-	Concurrency  int    `json:"concurrency"`
-	State        string `json:"state"`
+	// ID is the v2 queue ID. Empty on v1, which has no queue IDs.
+	ID           string
+	Repo         Repo
+	TargetBranch string
 
-	TestingTimeoutMinutes       int    `json:"testingTimeoutMinutes"`
-	PendingFailureDepth         int    `json:"pendingFailureDepth"`
-	CanOptimisticallyMerge      bool   `json:"canOptimisticallyMerge"`
-	Batch                       bool   `json:"batch"`
-	BatchingMaxWaitTimeMinutes  int    `json:"batchingMaxWaitTimeMinutes"`
-	BatchingMinSize             int    `json:"batchingMinSize"`
-	CreatePrsForTestingBranches bool   `json:"createPrsForTestingBranches"`
-	MergeMethod                 string `json:"mergeMethod"`
-	CommentsEnabled             bool   `json:"commentsEnabled"`
-	CommandsEnabled             bool   `json:"commandsEnabled"`
-	StatusCheckEnabled          bool   `json:"statusCheckEnabled"`
-	DirectMergeMode             string `json:"directMergeMode"`
-	OptimizationMode            string `json:"optimizationMode"`
-	BisectionConcurrency        int    `json:"bisectionConcurrency"`
-	ExtensionEnabled            bool   `json:"extensionEnabled"`
-	EnqueueingLabel             string `json:"enqueueingLabel"`
-	LabelCommandsEnabled        bool   `json:"labelCommandsEnabled"`
-	StateLabelsEnabled          bool   `json:"stateLabelsEnabled"`
-	NotReadyTimeoutHours        int    `json:"notReadyTimeoutHours"`
+	Mode  string
+	State string
+	// ManagedState says whether Terraform manages the queue. Only v2 reports it; empty on v1.
+	ManagedState string
 
-	// RequiredStatuses is null when no manual override is set (uses branch protection / trunk.yaml defaults).
-	RequiredStatuses *[]string `json:"requiredStatuses"`
+	Concurrency                 int
+	BisectionConcurrency        int
+	TestingTimeoutMinutes       int
+	PendingFailureDepth         int
+	CanOptimisticallyMerge      bool
+	Batch                       bool
+	BatchingMaxWaitTimeMinutes  int
+	BatchingMinSize             int
+	BatchingRules               []BatchingRule
+	CreatePrsForTestingBranches bool
+	MergeMethod                 string
+	CommentsEnabled             bool
+	CommandsEnabled             bool
+	StatusCheckEnabled          bool
+	ExtensionEnabled            bool
+	LabelCommandsEnabled        bool
+	StateLabelsEnabled          bool
+	EnqueueingLabel             string
+	DirectMergeMode             string
+	OptimizationMode            string
+	TestBranchConstructionMode  string
+	NotReadyTimeoutHours        int
+	// RequiredStatuses is the queue's override, sorted. Empty means no override: the queue uses
+	// .trunk/trunk.yaml or branch protection.
+	RequiredStatuses []string
 }
 
-// APIError represents a non-2xx response from the Trunk API.
-type APIError struct {
-	StatusCode int
-	Body       string
+// Settings are a queue's configurable fields. A nil field is left unchanged.
+type Settings struct {
+	Concurrency                 *int
+	BisectionConcurrency        *int
+	TestingTimeoutMinutes       *int
+	PendingFailureDepth         *int
+	CanOptimisticallyMerge      *bool
+	Batch                       *bool
+	BatchingMaxWaitTimeMinutes  *int
+	BatchingMinSize             *int
+	CreatePrsForTestingBranches *bool
+	MergeMethod                 *string
+	CommentsEnabled             *bool
+	CommandsEnabled             *bool
+	StatusCheckEnabled          *bool
+	ExtensionEnabled            *bool
+	LabelCommandsEnabled        *bool
+	StateLabelsEnabled          *bool
+	EnqueueingLabel             *string
+	DirectMergeMode             *string
+	OptimizationMode            *string
+	TestBranchConstructionMode  *string
+	NotReadyTimeoutHours        *int
+	// RequiredStatuses replaces the override. An empty list removes it, so the queue goes back
+	// to .trunk/trunk.yaml or branch protection; neither API can store an empty override.
+	RequiredStatuses *[]string
+	// BatchingRules replaces the rules. An empty list removes them all.
+	BatchingRules *[]BatchingRule
 }
 
-func (e *APIError) Error() string {
-	return fmt.Sprintf("API error %d: %s", e.StatusCode, e.Body)
+// CreateParams describes a queue to create.
+type CreateParams struct {
+	Repo         Repo
+	TargetBranch string
+	Mode         *string
+	// State, if set and not running, is applied right after the queue is created.
+	State    *string
+	Settings Settings
 }
 
-// CreateQueueRequest contains the fields accepted by the createQueue endpoint.
-// Per the API contract, only identity fields, mode, and concurrency are accepted at
-// create time; all other configuration must be applied via UpdateQueue.
-type CreateQueueRequest struct {
-	Repo         Repo   `json:"repo"`
-	TargetBranch string `json:"targetBranch"`
-	Mode         string `json:"mode,omitempty"`
-	Concurrency  int    `json:"concurrency,omitempty"`
-}
-
-// GetQueueRequest identifies the queue to retrieve.
-type GetQueueRequest struct {
-	Repo         Repo   `json:"repo"`
-	TargetBranch string `json:"targetBranch"`
-}
-
-// UpdateQueueRequest contains all fields that can be changed on an existing queue.
-// Nil pointer fields are omitted from the JSON body, leaving them unchanged on the API side.
-type UpdateQueueRequest struct {
-	Repo         Repo   `json:"repo"`
-	TargetBranch string `json:"targetBranch"`
-
-	Mode        *string `json:"mode,omitempty"`
-	Concurrency *int    `json:"concurrency,omitempty"`
-	State       *string `json:"state,omitempty"`
-
-	TestingTimeoutMinutes       *int      `json:"testingTimeoutMinutes,omitempty"`
-	PendingFailureDepth         *int      `json:"pendingFailureDepth,omitempty"`
-	CanOptimisticallyMerge      *bool     `json:"canOptimisticallyMerge,omitempty"`
-	Batch                       *bool     `json:"batch,omitempty"`
-	BatchingMaxWaitTimeMinutes  *int      `json:"batchingMaxWaitTimeMinutes,omitempty"`
-	BatchingMinSize             *int      `json:"batchingMinSize,omitempty"`
-	MergeMethod                 *string   `json:"mergeMethod,omitempty"`
-	CommentsEnabled             *bool     `json:"commentsEnabled,omitempty"`
-	CommandsEnabled             *bool     `json:"commandsEnabled,omitempty"`
-	CreatePrsForTestingBranches *bool     `json:"createPrsForTestingBranches,omitempty"`
-	StatusCheckEnabled          *bool     `json:"statusCheckEnabled,omitempty"`
-	DirectMergeMode             *string   `json:"directMergeMode,omitempty"`
-	OptimizationMode            *string   `json:"optimizationMode,omitempty"`
-	BisectionConcurrency        *int      `json:"bisectionConcurrency,omitempty"`
-	ExtensionEnabled            *bool     `json:"extensionEnabled,omitempty"`
-	EnqueueingLabel             *string   `json:"enqueueingLabel,omitempty"`
-	LabelCommandsEnabled        *bool     `json:"labelCommandsEnabled,omitempty"`
-	StateLabelsEnabled          *bool     `json:"stateLabelsEnabled,omitempty"`
-	NotReadyTimeoutHours        *int      `json:"notReadyTimeoutHours,omitempty"`
-	RequiredStatuses            *[]string `json:"requiredStatuses,omitempty"`
-
-	// DeleteRequiredStatuses reverts required statuses to branch protection / trunk.yaml defaults
-	// when set to true.
-	DeleteRequiredStatuses *bool `json:"deleteRequiredStatuses,omitempty"`
-}
-
-// DeleteQueueRequest identifies the queue to delete.
-type DeleteQueueRequest struct {
-	Repo         Repo   `json:"repo"`
-	TargetBranch string `json:"targetBranch"`
+// UpdateParams describes changes to an existing queue. Mode and State are only sent when they
+// differ from the queue's current values.
+type UpdateParams struct {
+	Ref      QueueRef
+	Mode     *string
+	State    *string
+	Settings Settings
 }

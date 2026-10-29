@@ -1,59 +1,28 @@
-# Terraform Provider for Trunk.io
+# Terraform Provider for Trunk
 
-Terraform provider for managing [Trunk.io](https://trunk.io) merge queue configuration.
+Manages Trunk merge queues (`trunk_merge_queue`) through the Trunk API.
 
-## Architecture
+## Layout
 
-- `internal/client/` — Standalone HTTP client for the Trunk API (no Terraform dependency). See [internal/client/CLAUDE.md](internal/client/CLAUDE.md).
-- `internal/provider/` — Terraform Plugin Framework resources and provider definition. See [internal/provider/CLAUDE.md](internal/provider/CLAUDE.md).
-- `main.go` — Provider server entry point.
+- `internal/client/` — the API client, free of Terraform types. See [its notes](internal/client/CLAUDE.md).
+- `internal/provider/` — the provider and resource, on the Terraform Plugin Framework. See [its notes](internal/provider/CLAUDE.md).
+- `internal/fakeapi/` — an in-memory fake of the v1 and v2 merge queue APIs that the tests run against.
+- `templates/` and `examples/` — sources for `docs/`, which `make generate` (tfplugindocs) writes. Don't edit `docs/` by hand.
 
-## Build
+## Commands
 
-```bash
-go build -o terraform-provider-trunk .
+```sh
+make build
+make test       # needs terraform on PATH; no Trunk account
+make testacc    # adds the upgrade test from the last 1.x release (downloads it)
+make generate   # after any schema, template or example change; commit docs/
+make lint
 ```
 
-## Tests
+## Two APIs
 
-```bash
-# Unit tests (no API key required)
-make test
+The credential picks the API: a `trunk_v2_` key uses v2 (bearer auth, queues by ID, camelCase enums, a separate endpoint for mode and for each state); anything else is the organization API token on v1 (`x-api-token`, queues by repo and branch, one `updateQueue`). The client hides the difference, so the resource never branches on the version except for `queue_id`, `managed_state` and import by ID, which only v2 has.
 
-# Acceptance tests (requires a real API key and test repository)
-TF_ACC=1 TRUNK_API_KEY=<key> make testacc
-```
+When adding a setting, add it to both APIs' request and response types in `internal/client`, to `Settings` and `Queue`, to the schema and model, and to both versions of `internal/fakeapi`. The trunk1 merge service accepts every queue field, but each API exposes only what its own layer maps (v1: trunk-io/trunk `public-api`; v2: trunk-io/trunk2 `ts/apps/public-api`).
 
-## Local Testing with dev_overrides
-
-To test a locally-built provider against a real Terraform config without publishing to the Registry:
-
-1. **Build the binary** in the repo root:
-
-   ```bash
-   go build -o terraform-provider-trunk .
-   ```
-
-2. **Create `~/.terraformrc`** with dev_overrides pointing at the repo root:
-
-   ```hcl
-   provider_installation {
-     dev_overrides {
-       "trunk-io/trunk" = "/path/to/terraform-provider-trunk"
-     }
-     direct {}
-   }
-   ```
-
-3. **Run Terraform** in a directory with a config that uses the `trunk-io/trunk` provider:
-
-   ```bash
-   export TRUNK_API_KEY=<your-api-key>
-   terraform apply    # no `terraform init` needed with dev_overrides
-   ```
-
-4. **Verify** with `terraform plan` — expect no changes if the provider is working correctly.
-
-5. **Clean up** — remove or revert `~/.terraformrc` when done so you return to using the Registry version.
-
-> **Note:** `terraform init` is not required (and will warn) when `dev_overrides` is active.
+Both APIs mark a queue Terraform-managed when a write carries `x-source: terraform` (or a User-Agent naming Terraform). Keep sending it.

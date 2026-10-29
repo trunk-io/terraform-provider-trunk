@@ -1,0 +1,205 @@
+// Package fakeapi is an in-memory stand-in for the Trunk merge queue API, v1 and v2, for tests.
+//
+// It mirrors the behavior the provider depends on, as the real services implement it:
+//   - v1 takes the organization token in x-api-token; v2 takes an API key as a bearer token.
+//   - Required statuses are stored sorted. v1 ignores an empty requiredStatuses and removes the
+//     override with deleteRequiredStatuses; v2 removes it with an empty list.
+//   - Changing the mode puts the queue in switching_modes, with the old mode, until
+//     FinishSwitches runs. v2 refuses config and mode changes meanwhile.
+//   - A write with x-source: terraform marks the queue Terraform-managed; Edit marks drift.
+//   - v2's PATCH rejects unknown fields, and v2 enforces its ranges.
+package fakeapi
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+)
+
+const (
+	// V1Token is the organization API token the server accepts on v1.
+	V1Token = "org-token-123"
+	// V2Key is the API key the server accepts on v2.
+	V2Key = "trunk_v2_testkey0000000000000000000000000000000000"
+)
+
+// BatchingRule is a stored batching rule.
+type BatchingRule struct {
+	TargetPattern string `json:"targetPattern"`
+	Policy        string `json:"policy"`
+}
+
+// Queue is a stored queue, in v1 spelling.
+type Queue struct {
+	ID           string
+	Host         string
+	Owner        string
+	Name         string
+	Branch       string
+	Mode         string
+	State        string
+	ManagedState string
+	// Entries is how many pull requests are queued; delete refuses while it is above zero.
+	Entries int
+
+	switchTo    string
+	resumeState string
+
+	Concurrency                 int
+	BisectionConcurrency        int
+	TestingTimeoutMinutes       int
+	PendingFailureDepth         int
+	CanOptimisticallyMerge      bool
+	Batch                       bool
+	BatchingMaxWaitTimeMinutes  int
+	BatchingMinSize             int
+	BatchingRules               []BatchingRule
+	CreatePrsForTestingBranches bool
+	MergeMethod                 string
+	CommentsEnabled             bool
+	CommandsEnabled             bool
+	StatusCheckEnabled          bool
+	ExtensionEnabled            bool
+	LabelCommandsEnabled        bool
+	StateLabelsEnabled          bool
+	EnqueueingLabel             string
+	DirectMergeMode             string
+	OptimizationMode            string
+	TestBranchConstructionMode  string
+	NotReadyTimeoutHours        int
+	RequiredStatuses            []string
+}
+
+// Request is one request the server received.
+type Request struct {
+	Method string
+	Path   string
+	Body   map[string]any
+}
+
+// Server is a fake Trunk API.
+type Server struct {
+	*httptest.Server
+
+	mu       sync.Mutex
+	repos    map[string]string // "host/owner/name" -> repository ID
+	queues   map[string]*Queue // queue ID -> queue
+	nextID   int
+	requests []Request
+}
+
+// New starts a server that knows the given repositories ("host/owner/name").
+func New(repos ...string) *Server {
+	s := &Server{repos: map[string]string{}, queues: map[string]*Queue{}}
+	for i, r := range repos {
+		s.repos[r] = fmt.Sprintf("repo-%d", i+1)
+	}
+	s.Server = httptest.NewServer(http.HandlerFunc(s.serve))
+	return s
+}
+
+// Requests returns the requests received so far.
+func (s *Server) Requests() []Request {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]Request(nil), s.requests...)
+}
+
+// Queue returns a copy of the queue on host/owner/name and branch, or nil.
+func (s *Server) Queue(repo, branch string) *Queue {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if q := s.find(repo, branch); q != nil {
+		c := *q
+		return &c
+	}
+	return nil
+}
+
+// Edit changes a queue as the web app would, outside Terraform.
+func (s *Server) Edit(repo, branch string, fn func(*Queue)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	q := s.find(repo, branch)
+	fn(q)
+	if q.ManagedState == "terraform" {
+		q.ManagedState = "terraform_with_drift"
+	}
+}
+
+// FinishSwitches completes every pending mode switch.
+func (s *Server) FinishSwitches() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, q := range s.queues {
+		if q.State == "switching_modes" {
+			q.Mode, q.State, q.switchTo = q.switchTo, q.resumeState, ""
+		}
+	}
+}
+
+func (s *Server) find(repo, branch string) *Queue {
+	for _, q := range s.queues {
+		if q.Host+"/"+q.Owner+"/"+q.Name == repo && q.Branch == branch {
+			return q
+		}
+	}
+	return nil
+}
+
+func newQueue(id, host, owner, name, branch string) *Queue {
+	return &Queue{
+		ID: id, Host: host, Owner: owner, Name: name, Branch: branch,
+		Mode: "single", State: "running", ManagedState: "manual",
+		Concurrency: 5, BisectionConcurrency: 5, BatchingMaxWaitTimeMinutes: 5, BatchingMinSize: 2,
+		BatchingRules: []BatchingRule{}, CreatePrsForTestingBranches: true, MergeMethod: "squash",
+		CommentsEnabled: true, CommandsEnabled: true, StatusCheckEnabled: true, ExtensionEnabled: true,
+		LabelCommandsEnabled: true, EnqueueingLabel: "trunk-merge-queue-submit", DirectMergeMode: "off",
+		OptimizationMode: "off", TestBranchConstructionMode: "rename_temp_branch", RequiredStatuses: []string{},
+	}
+}
+
+func fromTerraform(r *http.Request) bool {
+	return strings.Contains(strings.ToLower(r.Header.Get("x-source")+r.Header.Get("User-Agent")), "terraform")
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func v2Error(w http.ResponseWriter, status int, code, msg string) {
+	writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": msg}})
+}
+
+func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var raw json.RawMessage
+	_ = json.NewDecoder(r.Body).Decode(&raw)
+	var body map[string]any
+	_ = json.Unmarshal(raw, &body)
+	s.requests = append(s.requests, Request{Method: r.Method, Path: r.URL.Path, Body: body})
+
+	switch {
+	case strings.HasPrefix(r.URL.Path, "/v1/"):
+		if r.Header.Get("x-api-token") != V1Token {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		s.serveV1(w, r, raw)
+	case strings.HasPrefix(r.URL.Path, "/v2/"):
+		if r.Header.Get("Authorization") != "Bearer "+V2Key {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		s.serveV2(w, r, raw)
+	default:
+		http.NotFound(w, r)
+	}
+}

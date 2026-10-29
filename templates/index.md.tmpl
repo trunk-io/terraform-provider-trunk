@@ -1,0 +1,22 @@
+---
+page_title: "Trunk Provider"
+description: |-
+  Manage Trunk merge queues.
+---
+
+# Trunk Provider
+
+Manage [Trunk](https://trunk.io) merge queues as code.
+
+## Authentication
+
+The provider takes one credential, in `api_key` or the `TRUNK_API_KEY` environment variable, and picks the API from it:
+
+- **An API key** (starts with `trunk_v2_`) uses the [v2 API](https://docs.trunk.io/merge-queue/reference/api-v2). It needs the **Update Merge Queue settings** permission. Create one under **Settings** → **Developer** → **API Keys** in the Trunk app.
+- **The organization API token** uses the v1 API, which will be deprecated soon. It is in the **Organization API token (v1)** section of the same page.
+
+Both manage the same settings. With an API key, the provider also reports each queue's `queue_id` and whether it has been changed outside Terraform (`managed_state`).
+
+{{ tffile "examples/provider/provider.tf" }}
+
+{{ .SchemaMarkdown | trimspace }}
