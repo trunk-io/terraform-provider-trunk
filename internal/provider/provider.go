@@ -65,11 +65,11 @@ func (p *trunkProvider) Configure(ctx context.Context, req provider.ConfigureReq
 	// TRUNK_API_KEY here could plan with one API and apply with the other.
 	if config.APIKey.IsUnknown() {
 		resp.Diagnostics.AddAttributeError(path.Root("api_key"), "Unknown API key",
-			"api_key must be known when planning. Apply what it depends on first, for example with -target, or set TRUNK_API_KEY.")
+			"api_key isn't known until apply. Apply what it depends on first (for example with -target), or remove api_key and set TRUNK_API_KEY.")
 	}
 	if config.BaseURL.IsUnknown() {
 		resp.Diagnostics.AddAttributeError(path.Root("base_url"), "Unknown base URL",
-			"base_url must be known when planning. Apply what it depends on first, for example with -target, or set TRUNK_BASE_URL.")
+			"base_url isn't known until apply. Apply what it depends on first (for example with -target), or remove base_url and set TRUNK_BASE_URL.")
 	}
 	if resp.Diagnostics.HasError() {
 		return

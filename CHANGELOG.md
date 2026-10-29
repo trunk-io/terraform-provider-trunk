@@ -13,6 +13,7 @@ Change the version constraint to `~> 2.0` and run `terraform init -upgrade`. Exi
 - **Leaving out `required_statuses` no longer clears the queue's override.** 1.x reset it on every apply. To remove an override, set `required_statuses = []`. (`[]` never meant "require no checks": 1.x documented that, but the API ignored an empty list.)
 - **`required_statuses` is a set**, so order doesn't matter. References such as `required_statuses[0]` need `tolist()`.
 - **`base_url` is the API host**, such as `https://api.trunk.io`. A value ending in `/v1` still works.
+- **`api_key` and `base_url` must be known at plan time.** If one comes from a resource not yet created, apply that first. 1.x fell back to `TRUNK_API_KEY` and `TRUNK_BASE_URL` while they were unknown.
 - **To use an API key**, swap it in for the token. Nothing else changes; `queue_id` and `managed_state` fill in on the next refresh.
 
 ### Added

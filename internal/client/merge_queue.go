@@ -93,7 +93,7 @@ func (c *Client) createFailed(ctx context.Context, ref QueueRef, err error) (*Qu
 	case errors.Is(getErr, ErrNotFound):
 		return nil, err
 	case getErr != nil:
-		return nil, fmt.Errorf("%w: the create request failed (%w), and checking for the queue failed too (%v)", ErrCreateUnknown, err, getErr)
+		return nil, fmt.Errorf("%w; %w: %v", err, ErrCreateUnknown, getErr)
 	}
 	return q, err
 }
