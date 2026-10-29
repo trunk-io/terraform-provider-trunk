@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/trunk-io/terraform-provider-trunk/internal/fakeapi"
 )
@@ -81,10 +82,13 @@ func TestRetries(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var calls atomic.Int32
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// After a failed create the client looks the queue up; count only the request under test.
-				if tc.create == (r.URL.Path == "/v1/createQueue") {
-					calls.Add(1)
+				// Around a create the client also looks the queue up: there is none. Count only the
+				// request under test.
+				if tc.create && r.URL.Path != "/v1/createQueue" {
+					w.WriteHeader(http.StatusNotFound)
+					return
 				}
+				calls.Add(1)
 				w.WriteHeader(tc.status)
 			}))
 			defer srv.Close()
@@ -441,11 +445,61 @@ func TestV2_caseInsensitiveSearchFollowsPages(t *testing.T) {
 func TestV2_missingPermissionNamesIt(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"error":{"code":"INSUFFICIENT_PERMISSIONS","message":"missing manage_queues"}}`))
+		_, _ = w.Write([]byte(`{"error":{"code":"INSUFFICIENT_PERMISSIONS","message":"The supplied credential is missing the required permission: manage_queues"}}`))
 	}))
 	defer srv.Close()
 	_, err := testClient(fakeapi.V2Key, srv.URL).GetQueue(context.Background(), QueueRef{ID: "q"})
 	if err == nil || !strings.Contains(err.Error(), "Update Merge Queue settings") || !IsStatus(err, http.StatusForbidden) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// A server error on create can't adopt a queue that was already on the branch: the create checks
+// first and never sends the request.
+func TestCreate_existingQueueNotAdoptedAfterServerError(t *testing.T) {
+	eachAPI(t, func(t *testing.T, srv *fakeapi.Server, c *Client) {
+		ctx := context.Background()
+		if _, err := c.CreateQueue(ctx, CreateParams{Repo: widgets, TargetBranch: "main"}); err != nil {
+			t.Fatal(err)
+		}
+		path := map[APIVersion]string{V1: "/v1/createQueue", V2: "/v2/merge-queues"}[c.Version()]
+		srv.FailAfter(http.MethodPost, path, http.StatusBadGateway)
+		q, err := c.CreateQueue(ctx, CreateParams{Repo: widgets, TargetBranch: "main"})
+		if !errors.Is(err, ErrAlreadyExists) || q != nil {
+			t.Fatalf("q = %v, err = %v; want ErrAlreadyExists", q, err)
+		}
+	})
+}
+
+func TestRetries_timeoutIsRetried(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			time.Sleep(200 * time.Millisecond)
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	c := testClient(fakeapi.V2Key, srv.URL)
+	c.httpClient.Timeout = 50 * time.Millisecond
+	_, err := c.GetQueue(context.Background(), QueueRef{ID: "q"})
+	if !errors.Is(err, ErrNotFound) || calls.Load() < 2 {
+		t.Fatalf("err = %v after %d calls; want a retry, then not found", err, calls.Load())
+	}
+}
+
+// v1 creates in two requests. If configuring fails, the queue is still returned with the error.
+func TestV1_configureFailureAfterCreateReturnsQueue(t *testing.T) {
+	srv := fakeapi.New(repoPath)
+	defer srv.Close()
+	c := testClient(fakeapi.V1Token, srv.URL)
+	// The first updateQueue is the check that no queue exists; fail every attempt after it.
+	srv.PassNext(http.MethodPost, "/v1/updateQueue")
+	for range 4 {
+		srv.FailAfter(http.MethodPost, "/v1/updateQueue", http.StatusBadGateway)
+	}
+	q, err := c.CreateQueue(context.Background(), CreateParams{Repo: widgets, TargetBranch: "main", Settings: Settings{Concurrency: ptr(3)}})
+	if err == nil || q == nil || q.Concurrency != 3 {
+		t.Fatalf("q = %+v, err = %v; want the queue and an error", q, err)
 	}
 }

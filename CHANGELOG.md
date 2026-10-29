@@ -29,7 +29,7 @@ Change the version constraint to `~> 2.0` and run `terraform init -upgrade`. Exi
 - A refresh with a wrong or revoked organization API token, or for a repository Trunk can't find, removed the queue from state. v1 answers both as "not found"; the provider now checks, and reports the token or repository.
 - While a queue switched modes, the next apply sent its state back, which abandoned the switch. Terraform now shows the new mode and refuses changes until the switch finishes.
 - A retried mode change could leave a queue switching modes for good. Mode changes are no longer retried after a server error.
-- A create that failed after the queue was made left nothing in state, so the next apply failed with "already exists". After a server error the provider now looks for the queue and records it; Terraform replaces it on the next apply, or `terraform untaint` keeps it.
+- A create that failed after the queue was made left nothing in state, so the next apply failed with "already exists". The provider now checks the branch before creating, and after a server error looks for the queue and records it; Terraform replaces it on the next apply, or `terraform untaint` keeps it.
 - Creates are no longer retried after a server error, which could turn a lost response into "already exists".
 - Requests that hit the rate limit (429) are retried.
 - The "queue is not empty" error and the example used uppercase values (`DRAINING`, `SQUASH`) the provider rejects.

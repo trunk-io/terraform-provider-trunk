@@ -141,12 +141,13 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 			}
 		}
 		lastErr = c.doOnce(ctx, method, target, bodyBytes, out)
-		if lastErr == nil || !retryable(lastErr, policy) {
+		if lastErr == nil || ctx.Err() != nil || !retryable(lastErr, policy) {
 			break
 		}
 	}
 	var apiErr *APIError
-	if errors.As(lastErr, &apiErr) && apiErr.Code == "INSUFFICIENT_PERMISSIONS" {
+	// trunk2 also uses this code for a revoked key, with a different message.
+	if errors.As(lastErr, &apiErr) && apiErr.Code == "INSUFFICIENT_PERMISSIONS" && strings.Contains(apiErr.Message, "missing the required permission") {
 		// The message names the internal permission; point at the one people pick in the app.
 		return fmt.Errorf("the API key needs the Update Merge Queue settings permission: %w", lastErr)
 	}
@@ -161,8 +162,9 @@ func retryable(err error, policy retryPolicy) bool {
 		}
 		return policy == retrySafe && apiErr.StatusCode >= 500
 	}
-	// A network failure: the request may or may not have reached the server.
-	return policy == retrySafe && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
+	// A network failure or a timeout: the request may or may not have reached the server. The
+	// caller checks its own context before retrying.
+	return policy == retrySafe
 }
 
 func (c *Client) doOnce(ctx context.Context, method, target string, bodyBytes []byte, out any) error {

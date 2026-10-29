@@ -125,7 +125,8 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 					"by impacted targets, which CI must upload. Changing it on an existing queue starts a mode switch.",
 				stringvalidator.OneOf(client.ModeSingle, client.ModeParallel)),
 			"state": optionalString(
-				"`running`, `paused` (stops testing and merging), or `draining` (finishes queued pull requests and accepts no new ones).",
+				"`running`, `paused` (starts no new tests and merges nothing), or `draining` (tests and merges the pull requests already in the queue). "+
+					"Pull requests submitted while paused or draining wait until it's running.",
 				stringvalidator.OneOf(client.StateRunning, client.StatePaused, client.StateDraining)),
 			"concurrency": optionalInt("How many pull requests (or batches) the queue tests at once.",
 				int64validator.AtLeast(1)),
@@ -298,11 +299,11 @@ func (r *mergeQueueResource) Create(ctx context.Context, req resource.CreateRequ
 	switch {
 	case err != nil && queue != nil:
 		resp.Diagnostics.AddError("Merge queue created but not fully configured",
-			fmt.Sprintf("Configuring the merge queue for %s failed: %s. Terraform marks it tainted, so the next apply replaces it. "+
+			fmt.Sprintf("The merge queue for %s exists, but setting it up failed: %s. Terraform marks it tainted, so the next apply replaces it. "+
 				"To keep it, run `terraform untaint <resource address>` and apply.", describe(&plan), err))
 	case errors.Is(err, client.ErrCreatedNotRecorded):
 		resp.Diagnostics.AddError("Merge queue created but not recorded",
-			fmt.Sprintf("The merge queue for %s was created, but configuring it failed and it couldn't be read back: %s. "+
+			fmt.Sprintf("The merge queue for %s was created, but Terraform couldn't record it (%s). "+
 				"Import it before applying again:\n\n  terraform import <resource address> %q", describe(&plan), err, importID(&plan)))
 	case err != nil:
 		resp.Diagnostics.AddError("Error creating merge queue", fmt.Sprintf("Could not create the merge queue for %s: %s", describe(&plan), err))

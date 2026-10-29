@@ -25,7 +25,7 @@ A change made in the Trunk app or through the API to a setting in your configura
 
 ## Switching modes
 
-Changing `mode` on an existing queue starts a switch: the queue drains, accepting no new pull requests, and switches once it is empty. Until then Terraform shows the new mode and refuses any change to the queue, since changing its state would abandon the switch. Apply again once the switch finishes. To cancel a switch, use the Trunk app.
+Changing `mode` on an existing queue starts a switch: the queue drains (new pull requests wait) and switches once it is empty. Until then Terraform shows the new mode and refuses any change to the queue, since changing its state would abandon the switch. Apply again once the switch finishes. To cancel a switch, use the Trunk app, then set `mode` back in your configuration, or the next apply starts the switch again.
 
 ## Deleting a queue
 
@@ -37,4 +37,4 @@ A queue that still has pull requests can't be deleted. Set `state = "draining"`,
 
 {{ codefile "shell" "examples/resources/trunk_merge_queue/import.sh" }}
 
-Importing by queue ID records the repository as Trunk spells it. If your configuration's `repo` differs in capitals, import by path instead, or the plan replaces the queue.
+A queue's ID is its `queue_id`, or its `id` in the v2 API. Importing by ID records the repository as Trunk spells it. If your configuration's `repo` differs in capitals, import by path instead, or the plan replaces the queue.

@@ -12,6 +12,16 @@ import (
 // later one fails, the queue still exists: the returned Queue is its current state (when it could
 // be read) alongside the error, so the caller can record it and finish on the next apply.
 func (c *Client) CreateQueue(ctx context.Context, p CreateParams) (*Queue, error) {
+	// Check first, so that a queue found after a failed create can only be this create's. Without
+	// it, a gateway error or dropped connection that never reached Trunk would adopt a queue
+	// someone else made, and Terraform would replace it on the next apply.
+	_, err := c.GetQueue(ctx, QueueRef{Repo: p.Repo, TargetBranch: p.TargetBranch})
+	switch {
+	case err == nil:
+		return nil, ErrAlreadyExists
+	case !errors.Is(err, ErrNotFound):
+		return nil, err
+	}
 	if c.version == V2 {
 		return c.createV2(ctx, p)
 	}
@@ -70,8 +80,8 @@ func changed(want *string, have string) *string {
 
 // createFailed handles a create request that failed with something other than a conflict. After
 // a server error or a lost response the request may still have created the queue, so it looks for
-// one to return with the error, for the caller to record. A 4xx was refused before any write (v2
-// checks permissions and input before conflicts), so a queue found then isn't this request's.
+// one to return with the error, for the caller to record; CreateQueue checked that none existed
+// before. A 4xx was refused before any write, so it doesn't look.
 func (c *Client) createFailed(ctx context.Context, ref QueueRef, err error) (*Queue, error) {
 	var apiErr *APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode < 500 {
@@ -81,7 +91,7 @@ func (c *Client) createFailed(ctx context.Context, ref QueueRef, err error) (*Qu
 	if getErr != nil {
 		return nil, err
 	}
-	return q, fmt.Errorf("the request to create it failed, but it exists: %w", err)
+	return q, fmt.Errorf("the create request failed, but the queue was created: %w", err)
 }
 
 // afterCreate wraps a failure that happened once the queue existed, attaching its current state.
@@ -89,7 +99,7 @@ func (c *Client) createFailed(ctx context.Context, ref QueueRef, err error) (*Qu
 func (c *Client) afterCreate(ctx context.Context, ref QueueRef, err error) (*Queue, error) {
 	q, getErr := c.GetQueue(ctx, ref)
 	if getErr != nil {
-		return nil, fmt.Errorf("%w: %w", ErrCreatedNotRecorded, err)
+		return nil, fmt.Errorf("%w: setting it up failed: %w; reading it back failed: %v", ErrCreatedNotRecorded, err, getErr)
 	}
 	return q, err
 }

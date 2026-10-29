@@ -23,7 +23,7 @@ const (
 )
 
 var (
-	// ErrNotFound means the queue (or, on v2, its repository) does not exist.
+	// ErrNotFound means the queue does not exist.
 	ErrNotFound = errors.New("merge queue not found")
 	// ErrQueueNotEmpty means a delete was refused because pull requests are still queued.
 	ErrQueueNotEmpty = errors.New("merge queue still has pull requests")
@@ -36,7 +36,7 @@ var (
 	ErrRepositoryNotFound = errors.New("repository not found")
 	// ErrCreatedNotRecorded means a create made the queue but it couldn't be read back, so the
 	// caller has nothing to record.
-	ErrCreatedNotRecorded = errors.New("the merge queue was created but couldn't be read back")
+	ErrCreatedNotRecorded = errors.New("merge queue created but not recorded")
 )
 
 // QueueReplacedError means the queue at a reference's repository and branch has a different ID

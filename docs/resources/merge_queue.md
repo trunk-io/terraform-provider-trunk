@@ -47,7 +47,7 @@ A change made in the Trunk app or through the API to a setting in your configura
 
 ## Switching modes
 
-Changing `mode` on an existing queue starts a switch: the queue drains, accepting no new pull requests, and switches once it is empty. Until then Terraform shows the new mode and refuses any change to the queue, since changing its state would abandon the switch. Apply again once the switch finishes. To cancel a switch, use the Trunk app.
+Changing `mode` on an existing queue starts a switch: the queue drains (new pull requests wait) and switches once it is empty. Until then Terraform shows the new mode and refuses any change to the queue, since changing its state would abandon the switch. Apply again once the switch finishes. To cancel a switch, use the Trunk app, then set `mode` back in your configuration, or the next apply starts the switch again.
 
 ## Deleting a queue
 
@@ -83,7 +83,7 @@ A queue that still has pull requests can't be deleted. Set `state = "draining"`,
 - `optimization_mode` (String) `bisection_skip_redundant_tests` (**Skip Redundant Bisection Tests** in the app): while bisecting a failed batch, skip any set of pull requests that already failed in the same bisection. `off` tests every set.
 - `pending_failure_depth` (Number) How many levels of later test runs to wait for before removing a failed pull request. With `can_optimistically_merge`, a later run that passes clears a failure caused by a flaky test. `0` doesn't wait.
 - `required_statuses` (Set of String) The checks a pull request's tests must pass, overriding `.trunk/trunk.yaml` and branch protection. Set to `[]` to remove the override and use those again; an override can't be empty. Leave it out to leave the queue's override as it is.
-- `state` (String) `running`, `paused` (stops testing and merging), or `draining` (finishes queued pull requests and accepts no new ones).
+- `state` (String) `running`, `paused` (starts no new tests and merges nothing), or `draining` (tests and merges the pull requests already in the queue). Pull requests submitted while paused or draining wait until it's running.
 - `state_labels_enabled` (Boolean) Label pull requests with their merge queue state.
 - `status_check_enabled` (Boolean) Post a GitHub check on queued pull requests.
 - `test_branch_construction_mode` (String) How the queue creates the `trunk-merge/` branch it tests on. `rename_temp_branch` builds it on a `trunk-temp/` branch and renames it. `push_new_branch_from_temp` creates it directly; use it when a GitHub ruleset on `trunk-temp/` branches blocks renaming them.
@@ -123,4 +123,4 @@ terraform import trunk_merge_queue.main github.com/my-org/my-repo/main
 terraform import trunk_merge_queue.main xK9mP2nQ
 ```
 
-Importing by queue ID records the repository as Trunk spells it. If your configuration's `repo` differs in capitals, import by path instead, or the plan replaces the queue.
+A queue's ID is its `queue_id`, or its `id` in the v2 API. Importing by ID records the repository as Trunk spells it. If your configuration's `repo` differs in capitals, import by path instead, or the plan replaces the queue.

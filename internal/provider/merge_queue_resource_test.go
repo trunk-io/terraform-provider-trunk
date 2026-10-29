@@ -354,9 +354,8 @@ func TestMergeQueue_validation(t *testing.T) {
 	})
 }
 
-// A create that fails after the queue exists records it, so the next apply doesn't hit
-// "already exists". For v2 the failure is in the create request itself, which v2 can answer with
-// an error after committing the queue.
+// A create request that fails after the queue was made records it, so the next apply doesn't hit
+// "already exists".
 func TestMergeQueue_partialCreate(t *testing.T) {
 	eachCredential(t, func(t *testing.T, server *fakeapi.Server, cred credential) {
 		p := providerBlock(server, cred.key)
@@ -366,14 +365,8 @@ func TestMergeQueue_partialCreate(t *testing.T) {
 			Steps: []resource.TestStep{
 				{
 					PreConfig: func() {
-						if cred.name == "v1" {
-							// updateQueue is retried on 5xx; fail every attempt.
-							for range 4 {
-								server.FailAfter(http.MethodPost, "/v1/updateQueue", http.StatusInternalServerError)
-							}
-						} else {
-							server.FailAfter(http.MethodPost, "/v2/merge-queues", http.StatusInternalServerError)
-						}
+						path := map[string]string{"v1": "/v1/createQueue", "v2": "/v2/merge-queues"}[cred.name]
+						server.FailAfter(http.MethodPost, path, http.StatusInternalServerError)
 					},
 					Config:      config,
 					ExpectError: regexp.MustCompile(`created but not fully configured`),

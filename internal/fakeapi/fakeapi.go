@@ -125,6 +125,12 @@ func (s *Server) Queue(repo, branch string) *Queue {
 	return nil
 }
 
+// PassNext lets the next request to method and path through normally, ahead of failures queued
+// with FailAfter.
+func (s *Server) PassNext(method, path string) {
+	s.FailAfter(method, path, 0)
+}
+
 // AddDuplicateRepo adds a second record for a repository, as some organizations have. Its ID sorts
 // first, so v2 lists it first.
 func (s *Server) AddDuplicateRepo(repo string) {
@@ -213,7 +219,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	key := r.Method + " " + r.URL.Path
 	if statuses := s.failNext[key]; len(statuses) > 0 {
 		s.failNext[key] = statuses[1:]
-		w = &failingWriter{ResponseWriter: w, status: statuses[0]}
+		if statuses[0] != 0 {
+			w = &failingWriter{ResponseWriter: w, status: statuses[0]}
+		}
 	}
 
 	switch {

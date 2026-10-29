@@ -392,7 +392,7 @@ func (c *Client) createV2(ctx context.Context, p CreateParams) (*Queue, error) {
 	}
 	q, err := c.getV2ByID(ctx, created.ID, p.Repo)
 	if err != nil {
-		return c.afterCreate(ctx, ref, err)
+		return nil, fmt.Errorf("%w: reading it back failed: %w", ErrCreatedNotRecorded, err)
 	}
 	return q, nil
 }
