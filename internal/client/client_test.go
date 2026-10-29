@@ -408,8 +408,8 @@ func TestV2_duplicateRepositoryRecords(t *testing.T) {
 		t.Fatalf("GetQueue: %v", err)
 	}
 	// A create can't tell which record is meant, so it refuses rather than guess.
-	if _, err := c.CreateQueue(ctx, CreateParams{Repo: widgets, TargetBranch: "dev"}); err == nil || !strings.Contains(err.Error(), "ambiguous") {
-		t.Fatalf("create err = %v, want ambiguous", err)
+	if _, err := c.CreateQueue(ctx, CreateParams{Repo: widgets, TargetBranch: "dev"}); err == nil || !strings.Contains(err.Error(), "can't tell which") {
+		t.Fatalf("create err = %v, want a refusal", err)
 	}
 }
 
@@ -501,5 +501,37 @@ func TestV1_configureFailureAfterCreateReturnsQueue(t *testing.T) {
 	q, err := c.CreateQueue(context.Background(), CreateParams{Repo: widgets, TargetBranch: "main", Settings: Settings{Concurrency: ptr(3)}})
 	if err == nil || q == nil || q.Concurrency != 3 {
 		t.Fatalf("q = %+v, err = %v; want the queue and an error", q, err)
+	}
+}
+
+// When the create fails and the check for the queue fails too, the outcome is unknown.
+func TestCreate_unknownOutcome(t *testing.T) {
+	srv := fakeapi.New(repoPath)
+	defer srv.Close()
+	c := testClient(fakeapi.V2Key, srv.URL)
+	srv.PassNext(http.MethodGet, "/v2/merge-queues") // the check before creating
+	srv.FailAfter(http.MethodPost, "/v2/merge-queues", http.StatusServiceUnavailable)
+	for range 4 {
+		srv.FailAfter(http.MethodGet, "/v2/merge-queues", http.StatusServiceUnavailable)
+	}
+	q, err := c.CreateQueue(context.Background(), CreateParams{Repo: widgets, TargetBranch: "main"})
+	if !errors.Is(err, ErrCreateUnknown) || q != nil {
+		t.Fatalf("q = %v, err = %v; want ErrCreateUnknown", q, err)
+	}
+}
+
+// A v2 create whose final read fails still returns the created queue to record.
+func TestV2_createReadBackFailureReturnsQueue(t *testing.T) {
+	srv := fakeapi.New(repoPath)
+	defer srv.Close()
+	c := testClient(fakeapi.V2Key, srv.URL)
+	ctx := context.Background()
+	// Find the new queue's path: IDs are mq<n>, and this is the first.
+	for range 4 {
+		srv.FailAfter(http.MethodGet, "/v2/merge-queues/mq1", http.StatusBadGateway)
+	}
+	q, err := c.CreateQueue(ctx, CreateParams{Repo: widgets, TargetBranch: "main"})
+	if err == nil || q == nil || q.ID != "mq1" {
+		t.Fatalf("q = %+v, err = %v; want the created queue and an error", q, err)
 	}
 }

@@ -81,17 +81,21 @@ func changed(want *string, have string) *string {
 // createFailed handles a create request that failed with something other than a conflict. After
 // a server error or a lost response the request may still have created the queue, so it looks for
 // one to return with the error, for the caller to record; CreateQueue checked that none existed
-// before. A 4xx was refused before any write, so it doesn't look.
+// just before, so barring a concurrent create it is this one. A 4xx was refused before any write,
+// so it doesn't look.
 func (c *Client) createFailed(ctx context.Context, ref QueueRef, err error) (*Queue, error) {
 	var apiErr *APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode < 500 {
 		return nil, err
 	}
 	q, getErr := c.GetQueue(ctx, ref)
-	if getErr != nil {
+	switch {
+	case errors.Is(getErr, ErrNotFound):
 		return nil, err
+	case getErr != nil:
+		return nil, fmt.Errorf("%w: the create request failed (%w), and checking for the queue failed too (%v)", ErrCreateUnknown, err, getErr)
 	}
-	return q, fmt.Errorf("the create request failed, but the queue was created: %w", err)
+	return q, err
 }
 
 // afterCreate wraps a failure that happened once the queue existed, attaching its current state.
@@ -99,7 +103,7 @@ func (c *Client) createFailed(ctx context.Context, ref QueueRef, err error) (*Qu
 func (c *Client) afterCreate(ctx context.Context, ref QueueRef, err error) (*Queue, error) {
 	q, getErr := c.GetQueue(ctx, ref)
 	if getErr != nil {
-		return nil, fmt.Errorf("%w: setting it up failed: %w; reading it back failed: %v", ErrCreatedNotRecorded, err, getErr)
+		return nil, fmt.Errorf("setting it up failed: %w; %w: %v", err, ErrCreatedNotRecorded, getErr)
 	}
 	return q, err
 }

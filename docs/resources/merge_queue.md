@@ -13,6 +13,8 @@ Only the settings in your configuration are managed. A setting you leave out kee
 
 Apply doesn't take over an existing queue: [import](#import) it first.
 
+Not managed by this provider: allowed bot submitters, Slack notifications, accepting manual re-runs of failed checks, the re-run hold time, and the fork-PR impacted-targets setting. Set those in the Trunk app.
+
 With an API key, the v2 API caps some values (for example `concurrency` at 1000 and `not_ready_timeout_hours` at 720); an apply above a cap fails.
 
 ## Example Usage
@@ -47,7 +49,7 @@ A change made in the Trunk app or through the API to a setting in your configura
 
 ## Switching modes
 
-Changing `mode` on an existing queue starts a switch: the queue drains (new pull requests wait) and switches once it is empty. Until then Terraform shows the new mode and refuses any change to the queue, since changing its state would abandon the switch. Apply again once the switch finishes. To cancel a switch, use the Trunk app, then set `mode` back in your configuration, or the next apply starts the switch again.
+Changing `mode` on an existing queue starts a switch: the queue drains (new pull requests wait) and switches once it is empty. Until then Terraform shows the new mode and refuses any change to the queue, since changing its state would abandon the switch. Further changes wait until the switch finishes. To cancel a switch, use the Trunk app, then set `mode` back in your configuration, or the next apply starts the switch again.
 
 ## Deleting a queue
 
@@ -81,7 +83,7 @@ A queue that still has pull requests can't be deleted. Set `state = "draining"`,
 - `mode` (String) `single` tests pull requests in one line, each with the changes ahead of it. `parallel` splits the queue into independent lines by impacted targets, which CI must upload. Changing it on an existing queue starts a mode switch.
 - `not_ready_timeout_hours` (Number) Hours a submitted pull request may stay unable to enter the queue before it is cancelled (**Stale PR Timeout** in the app). `0` means no timeout.
 - `optimization_mode` (String) `bisection_skip_redundant_tests` (**Skip Redundant Bisection Tests** in the app): while bisecting a failed batch, skip any set of pull requests that already failed in the same bisection. `off` tests every set.
-- `pending_failure_depth` (Number) How many levels of later test runs to wait for before removing a failed pull request. With `can_optimistically_merge`, a later run that passes clears a failure caused by a flaky test. `0` doesn't wait.
+- `pending_failure_depth` (Number) How many levels of later test runs to wait for before failing a pull request (or bisecting its batch). With `can_optimistically_merge`, a later run that passes clears a failure caused by a flaky test. `0` doesn't wait.
 - `required_statuses` (Set of String) The checks a pull request's tests must pass, overriding `.trunk/trunk.yaml` and branch protection. Set to `[]` to remove the override and use those again; an override can't be empty. Leave it out to leave the queue's override as it is.
 - `state` (String) `running`, `paused` (starts no new tests and merges nothing), or `draining` (tests and merges the pull requests already in the queue). Pull requests submitted while paused or draining wait until it's running.
 - `state_labels_enabled` (Boolean) Label pull requests with their merge queue state.

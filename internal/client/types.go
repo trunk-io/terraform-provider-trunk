@@ -36,7 +36,10 @@ var (
 	ErrRepositoryNotFound = errors.New("repository not found")
 	// ErrCreatedNotRecorded means a create made the queue but it couldn't be read back, so the
 	// caller has nothing to record.
-	ErrCreatedNotRecorded = errors.New("merge queue created but not recorded")
+	ErrCreatedNotRecorded = errors.New("couldn't read it back")
+	// ErrCreateUnknown means a create request failed in a way that may have created the queue,
+	// and checking for it failed too.
+	ErrCreateUnknown = errors.New("the merge queue may have been created")
 )
 
 // QueueReplacedError means the queue at a reference's repository and branch has a different ID

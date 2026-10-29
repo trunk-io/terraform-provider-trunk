@@ -268,3 +268,7 @@ func (m *mergeQueueResourceModel) fromQueue(q *client.Queue, expected *mergeQueu
 func known(v types.String) bool {
 	return !v.IsNull() && !v.IsUnknown()
 }
+
+func known64(v types.Int64) bool {
+	return !v.IsNull() && !v.IsUnknown()
+}

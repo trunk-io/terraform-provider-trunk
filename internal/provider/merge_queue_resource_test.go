@@ -339,6 +339,10 @@ func TestMergeQueue_validation(t *testing.T) {
 				ExpectError: regexp.MustCompile(`merge_method`),
 			},
 			{
+				Config:      p + queueConfig(`batching_max_wait_time_minutes = 0`),
+				ExpectError: regexp.MustCompile(`needs an API key`),
+			},
+			{
 				Config:      p + queueConfig(`required_statuses = [""]`),
 				ExpectError: regexp.MustCompile(`required_statuses`),
 			},

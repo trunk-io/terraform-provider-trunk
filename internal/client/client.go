@@ -146,7 +146,8 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		}
 	}
 	var apiErr *APIError
-	// trunk2 also uses this code for a revoked key, with a different message.
+	// trunk2 also uses this code, with other messages, for a caller with no standing in the
+	// organization and for a repository the credential can't access.
 	if errors.As(lastErr, &apiErr) && apiErr.Code == "INSUFFICIENT_PERMISSIONS" && strings.Contains(apiErr.Message, "missing the required permission") {
 		// The message names the internal permission; point at the one people pick in the app.
 		return fmt.Errorf("the API key needs the Update Merge Queue settings permission: %w", lastErr)
@@ -155,6 +156,10 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 }
 
 func retryable(err error, policy retryPolicy) bool {
+	var decodeErr *decodeError
+	if errors.As(err, &decodeErr) {
+		return false
+	}
 	var apiErr *APIError
 	if errors.As(err, &apiErr) {
 		if apiErr.StatusCode == http.StatusTooManyRequests {
@@ -204,7 +209,7 @@ func (c *Client) doOnce(ctx context.Context, method, target string, bodyBytes []
 	}
 	if out != nil && len(bytes.TrimSpace(respBytes)) > 0 {
 		if err := json.Unmarshal(respBytes, out); err != nil {
-			return fmt.Errorf("unmarshaling response: %w", err)
+			return &decodeError{err}
 		}
 	}
 	return nil
@@ -226,3 +231,9 @@ func newAPIError(status int, body []byte) *APIError {
 	}
 	return &APIError{StatusCode: status, Message: msg}
 }
+
+// decodeError is a 2xx response the client couldn't read. Retrying won't change it.
+type decodeError struct{ err error }
+
+func (e *decodeError) Error() string { return "unmarshaling response: " + e.err.Error() }
+func (e *decodeError) Unwrap() error { return e.err }

@@ -53,7 +53,7 @@ The tests need no Trunk account: `internal/fakeapi` serves both API versions. Ru
 
 ### Trying a local build
 
-Build the binary, then point Terraform at it in `~/.terraformrc`:
+Run `go build -o . .` (writes `terraform-provider-trunk` in the repo root), then point Terraform at the repo directory in `~/.terraformrc`:
 
 ```hcl
 provider_installation {

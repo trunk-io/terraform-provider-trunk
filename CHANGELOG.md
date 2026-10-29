@@ -49,7 +49,7 @@ Change the version constraint to `~> 2.0` and run `terraform init -upgrade`. Exi
 
 ## [0.1.3] - 2026-04-09
 
-- First releases: the `trunk_merge_queue` resource, with create, read, update, delete and import, through the v1 API with the organization API token.
+- First releases (0.1.0–0.1.3): the `trunk_merge_queue` resource, with create, read, update, delete and import, through the v1 API with the organization API token.
 
 [Unreleased]: https://github.com/trunk-io/terraform-provider-trunk/compare/v2.0.0...HEAD
 [2.0.0]: https://github.com/trunk-io/terraform-provider-trunk/compare/v1.1.0...v2.0.0

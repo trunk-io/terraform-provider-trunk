@@ -136,7 +136,7 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"testing_timeout_minutes": optionalInt("Minutes to wait for a pull request's tests before failing it. `0` means no timeout.",
 				int64validator.AtLeast(0)),
 			"pending_failure_depth": optionalInt(
-				"How many levels of later test runs to wait for before removing a failed pull request. With `can_optimistically_merge`, a later run that passes clears a failure caused by a flaky test. `0` doesn't wait.",
+				"How many levels of later test runs to wait for before failing a pull request (or bisecting its batch). With `can_optimistically_merge`, a later run that passes clears a failure caused by a flaky test. `0` doesn't wait.",
 				int64validator.AtLeast(0)),
 			"can_optimistically_merge": optionalBool("When a pull request passes before those ahead of it finish testing, merge it and them together, since its tests included their changes."),
 			"batch":                    optionalBool("Test several pull requests together as one batch."),
@@ -209,7 +209,20 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 // keeps its value. An apply that changes the queue writes as Terraform, which marks it
 // Terraform-managed on v2; on v1 both are null, which also clears values left by a v2 credential.
 func (r *mergeQueueResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
-	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+	if req.Plan.Raw.IsNull() {
+		return
+	}
+	// v1 requires at least 1; say so at plan time rather than with the API's error at apply.
+	if r.client != nil && r.client.Version() == client.V1 {
+		var wait types.Int64
+		resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("batching_max_wait_time_minutes"), &wait)...)
+		if known64(wait) && wait.ValueInt64() == 0 {
+			resp.Diagnostics.AddAttributeError(path.Root("batching_max_wait_time_minutes"), "Needs an API key",
+				"batching_max_wait_time_minutes = 0 needs an API key; with the organization API token the minimum is 1.")
+			return
+		}
+	}
+	if req.State.Raw.IsNull() {
 		return
 	}
 	var prior types.String
@@ -299,8 +312,12 @@ func (r *mergeQueueResource) Create(ctx context.Context, req resource.CreateRequ
 	switch {
 	case err != nil && queue != nil:
 		resp.Diagnostics.AddError("Merge queue created but not fully configured",
-			fmt.Sprintf("The merge queue for %s exists, but setting it up failed: %s. Terraform marks it tainted, so the next apply replaces it. "+
+			fmt.Sprintf("The merge queue for %s was created, but the apply failed: %s. Terraform marks it tainted, so the next apply replaces it. "+
 				"To keep it, run `terraform untaint <resource address>` and apply.", describe(&plan), err))
+	case errors.Is(err, client.ErrCreateUnknown):
+		resp.Diagnostics.AddError("Merge queue may have been created",
+			fmt.Sprintf("Creating the merge queue for %s failed in a way that may have created it: %s. "+
+				"If the next apply reports that it already exists, import it:\n\n  terraform import <resource address> %q", describe(&plan), err, importID(&plan)))
 	case errors.Is(err, client.ErrCreatedNotRecorded):
 		resp.Diagnostics.AddError("Merge queue created but not recorded",
 			fmt.Sprintf("The merge queue for %s was created, but Terraform couldn't record it (%s). "+

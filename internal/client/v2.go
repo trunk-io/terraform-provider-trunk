@@ -355,8 +355,8 @@ func (c *Client) createV2(ctx context.Context, p CreateParams) (*Queue, error) {
 		return nil, err
 	}
 	if len(repoIDs) > 1 {
-		return nil, fmt.Errorf("the queue's repository is ambiguous: Trunk has %d records for %s/%s/%s; contact Trunk support",
-			len(repoIDs), p.Repo.Host, p.Repo.Owner, p.Repo.Name)
+		return nil, fmt.Errorf("can't tell which of the %d records Trunk has for %s/%s/%s to create the queue in; "+
+			"create the queue in the Trunk app and import it, or contact Trunk support", len(repoIDs), p.Repo.Host, p.Repo.Owner, p.Repo.Name)
 	}
 	repoID := repoIDs[0]
 	// Only fields v2 writes with the create itself. It applies bisectionConcurrency and
@@ -392,7 +392,8 @@ func (c *Client) createV2(ctx context.Context, p CreateParams) (*Queue, error) {
 	}
 	q, err := c.getV2ByID(ctx, created.ID, p.Repo)
 	if err != nil {
-		return nil, fmt.Errorf("%w: reading it back failed: %w", ErrCreatedNotRecorded, err)
+		// Record what the create returned; the next apply finishes from there.
+		return created.toQueue(p.Repo), fmt.Errorf("reading it back failed: %w", err)
 	}
 	return q, nil
 }

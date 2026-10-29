@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -177,8 +178,7 @@ func (c *Client) confirmNotFoundV1(ctx context.Context, ref QueueRef) error {
 		return v1Unauthorized(err, ref.Repo)
 	}
 	// The queue exists after all; report the original answer rather than guess.
-	return fmt.Errorf("the Trunk API reported %s/%s/%s branch %q as not found, then found it; try again",
-		ref.Repo.Host, ref.Repo.Owner, ref.Repo.Name, ref.TargetBranch)
+	return errors.New("the Trunk API reported the queue as not found, then found it; try again")
 }
 
 func (c *Client) createV1(ctx context.Context, p CreateParams) (*Queue, error) {
