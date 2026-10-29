@@ -11,17 +11,21 @@ description: |-
 
 Only the settings in your configuration are managed. A setting you leave out keeps whatever value the queue has, including one set in the Trunk app.
 
+Apply doesn't take over an existing queue: [import](#import) it first.
+
+With an API key, the v2 API caps some values (for example `concurrency` at 1000 and `not_ready_timeout_hours` at 720); an apply above a cap fails.
+
 ## Example Usage
 
 {{ tffile "examples/resources/trunk_merge_queue/resource.tf" }}
 
 ## Changing settings outside Terraform
 
-Changes made in the Trunk app or through the API show up as differences in the next plan, and the next apply sets them back. With an API key, `managed_state` is `terraform_with_drift` until then.
+A change made in the Trunk app or through the API to a setting in your configuration shows up in the next plan, and apply reverts it. A change to a setting you left out is kept. With an API key, `managed_state` reads `terraform_with_drift` after either, until the next apply that changes the queue.
 
 ## Switching modes
 
-Changing `mode` on an existing queue starts a switch that finishes once the queue is empty. Until then the queue's state is switching modes. Terraform shows the new mode and refuses other changes to the queue, since changing its state would abandon the switch. Apply again once the switch finishes.
+Changing `mode` on an existing queue starts a switch: the queue drains, accepting no new pull requests, and switches once it is empty. Until then Terraform shows the new mode and refuses any change to the queue, since changing its state would abandon the switch. Apply again once the switch finishes.
 
 ## Deleting a queue
 

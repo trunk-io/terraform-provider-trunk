@@ -11,6 +11,10 @@ Manages a Trunk merge queue: one per repository and target branch.
 
 Only the settings in your configuration are managed. A setting you leave out keeps whatever value the queue has, including one set in the Trunk app.
 
+Apply doesn't take over an existing queue: [import](#import) it first.
+
+With an API key, the v2 API caps some values (for example `concurrency` at 1000 and `not_ready_timeout_hours` at 720); an apply above a cap fails.
+
 ## Example Usage
 
 ```terraform
@@ -39,11 +43,11 @@ resource "trunk_merge_queue" "main" {
 
 ## Changing settings outside Terraform
 
-Changes made in the Trunk app or through the API show up as differences in the next plan, and the next apply sets them back. With an API key, `managed_state` is `terraform_with_drift` until then.
+A change made in the Trunk app or through the API to a setting in your configuration shows up in the next plan, and apply reverts it. A change to a setting you left out is kept. With an API key, `managed_state` reads `terraform_with_drift` after either, until the next apply that changes the queue.
 
 ## Switching modes
 
-Changing `mode` on an existing queue starts a switch that finishes once the queue is empty. Until then the queue's state is switching modes. Terraform shows the new mode and refuses other changes to the queue, since changing its state would abandon the switch. Apply again once the switch finishes.
+Changing `mode` on an existing queue starts a switch: the queue drains, accepting no new pull requests, and switches once it is empty. Until then Terraform shows the new mode and refuses any change to the queue, since changing its state would abandon the switch. Apply again once the switch finishes.
 
 ## Deleting a queue
 
@@ -63,20 +67,20 @@ A queue that still has pull requests can't be deleted. Set `state = "draining"`,
 - `batching_max_wait_time_minutes` (Number) Minutes to wait for a batch to reach `batching_min_size` before testing it anyway. `0` never waits; `0` needs an API key, since the v1 API requires at least 1.
 - `batching_min_size` (Number) How many pull requests a batch waits for.
 - `batching_rules` (Attributes Set) Rules that change how pull requests are batched based on the build targets they impact. Only applies in `parallel` mode with impacted targets uploaded. Set to `[]` to remove every rule. (see [below for nested schema](#nestedatt--batching_rules))
-- `bisection_concurrency` (Number) How many tests may run at once while bisecting a failed batch. `0` shares `concurrency` instead of reserving slots; `0` needs an API key, since the v1 API requires at least 1.
+- `bisection_concurrency` (Number) How many tests bisecting a failed batch may run at once, separate from `concurrency`.
 - `can_optimistically_merge` (Boolean) When a pull request passes before those ahead of it finish testing, merge it and them together, since its tests included their changes.
 - `commands_enabled` (Boolean) Accept `/trunk` commands in pull request comments.
 - `comments_enabled` (Boolean) Post comments on pull requests about their progress through the queue.
-- `concurrency` (Number) How many pull requests (or batches) the queue tests at once. Up to 1000 with an API key.
+- `concurrency` (Number) How many pull requests (or batches) the queue tests at once.
 - `create_prs_for_testing_branches` (Boolean) Create a draft pull request for each test branch, so pull-request CI runs on it. When false, CI must run on pushes to `trunk-merge/` branches.
 - `direct_merge_mode` (String) `always` merges a pull request right away when it is already based on the tip of the target branch, the queue is empty and its tests passed; `off` always tests it in the queue.
 - `enqueueing_label` (String) The GitHub label that enqueues a pull request when `label_commands_enabled` is true.
-- `extension_enabled` (Boolean) Show the Trunk browser extension's merge queue controls for this repository.
+- `extension_enabled` (Boolean) Show the Trunk browser extension's merge queue controls on pull requests into this branch.
 - `label_commands_enabled` (Boolean) Let a GitHub label enqueue a pull request (see `enqueueing_label`).
 - `merge_method` (String) How pull requests are merged: `merge_commit`, `squash`, or `rebase`.
-- `mode` (String) `single` tests pull requests one after another; `parallel` tests independent pull requests in parallel, using impacted targets. Changing it on an existing queue starts a mode switch, which finishes once the queue is empty.
-- `not_ready_timeout_hours` (Number) Hours a submitted pull request may stay not ready to merge before it is removed. `0` means no timeout. Up to 720 with an API key.
-- `optimization_mode` (String) `bisection_skip_redundant_tests`: while bisecting a failed batch, don't test again a set of pull requests that already failed in the same bisection. `off` tests every set.
+- `mode` (String) `single` keeps one line, testing each pull request with the changes ahead of it. `parallel` splits it into independent lines by impacted targets, which CI must upload. Changing it on an existing queue starts a mode switch.
+- `not_ready_timeout_hours` (Number) Hours a submitted pull request may stay unable to enter the queue before it is cancelled (**Stale PR Timeout** in the app). `0` means no timeout.
+- `optimization_mode` (String) `bisection_skip_redundant_tests` (**Skip Redundant Bisection Tests** in the app): while bisecting a failed batch, skip any set of pull requests that already failed in the same bisection. `off` tests every set.
 - `pending_failure_depth` (Number) How many levels of later test runs to wait for before removing a failed pull request. With `can_optimistically_merge`, a later run that passes clears a failure caused by a flaky test. `0` doesn't wait.
 - `required_statuses` (Set of String) The checks a pull request's tests must pass, overriding `.trunk/trunk.yaml` and branch protection. Set to `[]` to remove the override and use those again; an override can't be empty. Leave it out to leave the queue's override as it is.
 - `state` (String) `running`, `paused` (stops testing and merging), or `draining` (finishes queued pull requests and accepts no new ones).

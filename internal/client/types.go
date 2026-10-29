@@ -28,6 +28,9 @@ var (
 	ErrSwitchingModes = errors.New("merge queue is switching modes")
 	// ErrAlreadyExists means a create found a queue already on that branch.
 	ErrAlreadyExists = errors.New("merge queue already exists")
+	// ErrRepositoryNotFound means the API couldn't find the repository. It is not ErrNotFound:
+	// the queue may well exist, so a caller must not treat it as deleted.
+	ErrRepositoryNotFound = errors.New("repository not found")
 )
 
 // Repo identifies a repository by its host, owner and name.

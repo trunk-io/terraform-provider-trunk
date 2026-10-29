@@ -2,6 +2,7 @@ package provider
 
 import (
 	"fmt"
+	"net/http"
 	"regexp"
 	"testing"
 
@@ -346,5 +347,114 @@ func TestMergeQueue_validation(t *testing.T) {
 				ExpectError: regexp.MustCompile(`target_pattern`),
 			},
 		},
+	})
+}
+
+// A create that fails after the queue exists records it, so the next apply doesn't hit
+// "already exists". For v2 the failure is in the create request itself, which v2 can answer with
+// an error after committing the queue.
+func TestMergeQueue_partialCreate(t *testing.T) {
+	eachCredential(t, func(t *testing.T, server *fakeapi.Server, cred credential) {
+		p := providerBlock(server, cred.key)
+		config := p + queueConfig(`concurrency = 6`)
+		resource.UnitTest(t, resource.TestCase{
+			ProtoV6ProviderFactories: factories,
+			Steps: []resource.TestStep{
+				{
+					PreConfig: func() {
+						if cred.name == "v1" {
+							// updateQueue is retried on 5xx; fail every attempt.
+							for range 4 {
+								server.FailAfter(http.MethodPost, "/v1/updateQueue", http.StatusInternalServerError)
+							}
+						} else {
+							server.FailAfter(http.MethodPost, "/v2/merge-queues", http.StatusInternalServerError)
+						}
+					},
+					Config:      config,
+					ExpectError: regexp.MustCompile(`created but not fully configured`),
+				},
+				{
+					Config: config,
+					Check: resource.ComposeAggregateTestCheckFunc(
+						resource.TestCheckResourceAttr("trunk_merge_queue.main", "concurrency", "6"),
+					),
+				},
+			},
+		})
+	})
+}
+
+// A refused token must not make Terraform forget a queue. v1's getQueue answers a bad token with
+// 404, the same as a deleted queue.
+func TestMergeQueue_badTokenKeepsState(t *testing.T) {
+	eachCredential(t, func(t *testing.T, server *fakeapi.Server, cred credential) {
+		good := providerBlock(server, cred.key)
+		bad := providerBlock(server, cred.key[:len(cred.key)-1]+"x")
+		resource.UnitTest(t, resource.TestCase{
+			ProtoV6ProviderFactories: factories,
+			Steps: []resource.TestStep{
+				{Config: good + queueConfig(`concurrency = 6`)},
+				{
+					Config:      bad + queueConfig(`concurrency = 6`),
+					ExpectError: regexp.MustCompile(`401`),
+				},
+				{
+					Config: good + queueConfig(`concurrency = 6`),
+					ConfigPlanChecks: resource.ConfigPlanChecks{
+						PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+					},
+				},
+			},
+		})
+	})
+}
+
+// v1 matches repository names ignoring case and v2 doesn't, so a configuration that worked with
+// the organization token must keep working, unchanged, with an API key.
+func TestMergeQueue_switchToAPIKeyWithDifferentCase(t *testing.T) {
+	server := fakeapi.New(repo)
+	defer server.Close()
+	config := queueConfig(`concurrency = 6`)
+	config = regexp.MustCompile(`owner = "acme"`).ReplaceAllString(config, `owner = "Acme"`)
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{Config: providerBlock(server, fakeapi.V1Token) + config},
+			{
+				Config: providerBlock(server, fakeapi.V2Key) + config,
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("trunk_merge_queue.main", "repo.owner", "Acme"),
+					resource.TestCheckResourceAttrSet("trunk_merge_queue.main", "queue_id"),
+				),
+			},
+			{
+				Config: providerBlock(server, fakeapi.V2Key) + regexp.MustCompile(`concurrency = 6`).ReplaceAllString(config, `concurrency = 7`),
+				Check:  resource.TestCheckResourceAttr("trunk_merge_queue.main", "managed_state", "terraform"),
+			},
+			// And back to the token: the v2-only attributes go back to null.
+			{
+				Config: providerBlock(server, fakeapi.V1Token) + regexp.MustCompile(`concurrency = 6`).ReplaceAllString(config, `concurrency = 8`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckNoResourceAttr("trunk_merge_queue.main", "queue_id"),
+					resource.TestCheckNoResourceAttr("trunk_merge_queue.main", "managed_state"),
+				),
+			},
+		},
+	})
+}
+
+func TestMergeQueue_bisectionConcurrencyAtLeastOne(t *testing.T) {
+	server := fakeapi.New(repo)
+	defer server.Close()
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{{
+			Config:      providerBlock(server, fakeapi.V2Key) + queueConfig(`bisection_concurrency = 0`),
+			ExpectError: regexp.MustCompile(`bisection_concurrency`),
+		}},
 	})
 }

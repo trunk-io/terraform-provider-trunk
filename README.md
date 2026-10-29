@@ -31,12 +31,11 @@ resource "trunk_merge_queue" "main" {
 
 ## Authentication
 
-Give the provider one credential, in `api_key` or `TRUNK_API_KEY`. It picks the API from the credential:
+Use an API key: an organization admin creates one under **Settings** → **Developer** → **API Keys** in the Trunk app, with the **Update Merge Queue settings** permission. Pass it in `api_key` or `TRUNK_API_KEY`.
 
-- **An API key** (starts with `trunk_v2_`) uses the v2 API. It needs the **Update Merge Queue settings** permission.
-- **The organization API token** uses the v1 API, which will be deprecated soon.
+The provider picks the API from the credential. An API key (`trunk_v2_...`) uses v2. The organization API token, on the same page, still works but uses v1, which will be deprecated soon.
 
-Both are under **Settings** → **Developer** → **API Keys** in the Trunk app. Upgrading from 1.x? See the [changelog](CHANGELOG.md#200).
+Upgrading from 1.x? See the [upgrade notes](CHANGELOG.md#200).
 
 ## Development
 

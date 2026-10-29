@@ -162,7 +162,7 @@ func (s *Server) serveV2(w http.ResponseWriter, r *http.Request, raw json.RawMes
 		repoID, branch := r.URL.Query().Get("repositoryId"), r.URL.Query().Get("targetBranch")
 		data := []any{}
 		for _, q := range s.queues {
-			if s.repos[q.Host+"/"+q.Owner+"/"+q.Name] == repoID && q.Branch == branch {
+			if (repoID == "" || s.repos[q.Host+"/"+q.Owner+"/"+q.Name] == repoID) && (branch == "" || q.Branch == branch) {
 				data = append(data, s.v2Body(q))
 			}
 		}
@@ -199,16 +199,28 @@ func (s *Server) serveV2(w http.ResponseWriter, r *http.Request, raw json.RawMes
 		s.nextID++
 		q := newQueue(fmt.Sprintf("mq%d", s.nextID), rp[0], rp[1], rp[2], req.TargetBranch)
 		if req.Mode != nil {
-			q.Mode = modeFromV2[*req.Mode]
+			mode, ok := modeFromV2[*req.Mode]
+			if !ok {
+				v2Error(w, http.StatusBadRequest, "VALIDATION_FAILED", "mode must be queue or graph")
+				return
+			}
+			q.Mode = mode
 		}
-		if msg := applyV2(q, &v2Config{Concurrency: req.Concurrency, BisectionConcurrency: req.BisectionConcurrency, EnqueueingLabel: req.EnqueueingLabel}); msg != "" {
-			v2Error(w, http.StatusBadRequest, "VALIDATION_FAILED", msg)
+		if !inRange(req.Concurrency, 1, 1000) {
+			v2Error(w, http.StatusBadRequest, "VALIDATION_FAILED", "concurrency is out of range")
 			return
 		}
+		setInt(&q.Concurrency, req.Concurrency)
 		if fromTerraform(r) {
 			q.ManagedState = "terraform"
 		}
 		s.queues[q.ID] = q
+		// Like trunk2, bisectionConcurrency and enqueueingLabel are a second write after the queue
+		// exists, so their failure leaves the queue behind.
+		if msg := applyV2(q, &v2Config{BisectionConcurrency: req.BisectionConcurrency, EnqueueingLabel: req.EnqueueingLabel}); msg != "" {
+			v2Error(w, http.StatusBadRequest, "VALIDATION_FAILED", msg)
+			return
+		}
 		writeJSON(w, http.StatusCreated, s.v2Body(q))
 
 	case len(parts) >= 2 && parts[0] == "merge-queues":

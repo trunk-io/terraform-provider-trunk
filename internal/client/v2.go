@@ -248,23 +248,27 @@ func v2ConfigFrom(s Settings) v2Config {
 	return cfg
 }
 
-// repositoryID looks up the v2 ID of the repository at host/owner/name.
+// repositoryID looks up the v2 ID of the repository at host/owner/name. v2 matches the name
+// exactly, where v1 ignores case.
 func (c *Client) repositoryID(ctx context.Context, repo Repo) (string, error) {
 	q := url.Values{}
 	q.Set("providerUrl", fmt.Sprintf("https://%s/%s/%s", repo.Host, repo.Owner, repo.Name))
 	var list v2List[struct {
 		ID string `json:"id"`
 	}]
-	if err := c.do(ctx, http.MethodGet, "/v2/repositories", q, nil, &list, retrySafe); err != nil {
-		if IsStatus(err, http.StatusNotFound) {
-			return "", fmt.Errorf("repository %s/%s/%s is not connected to Trunk: %w", repo.Host, repo.Owner, repo.Name, ErrNotFound)
-		}
+	err := c.do(ctx, http.MethodGet, "/v2/repositories", q, nil, &list, retrySafe)
+	if IsStatus(err, http.StatusNotFound) || (err == nil && len(list.Data) == 0) {
+		return "", repositoryNotFound(repo)
+	}
+	if err != nil {
 		return "", err
 	}
-	if len(list.Data) == 0 {
-		return "", fmt.Errorf("repository %s/%s/%s is not connected to Trunk: %w", repo.Host, repo.Owner, repo.Name, ErrNotFound)
-	}
 	return list.Data[0].ID, nil
+}
+
+func repositoryNotFound(repo Repo) error {
+	return fmt.Errorf("%w: %s/%s/%s isn't connected to Trunk, or Trunk spells its owner or name with different capitals",
+		ErrRepositoryNotFound, repo.Host, repo.Owner, repo.Name)
 }
 
 func (c *Client) getV2ByID(ctx context.Context, id string, repo Repo) (*Queue, error) {
@@ -287,6 +291,10 @@ func (c *Client) getV2(ctx context.Context, ref QueueRef) (*Queue, error) {
 		}
 	}
 	repoID, err := c.repositoryID(ctx, ref.Repo)
+	if errors.Is(err, ErrRepositoryNotFound) {
+		// A configuration written for v1 may differ in case from Trunk's repository name.
+		return c.findV2IgnoringCase(ctx, ref, err)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -303,30 +311,62 @@ func (c *Client) getV2(ctx context.Context, ref QueueRef) (*Queue, error) {
 	return list.Data[0].toQueue(ref.Repo), nil
 }
 
+// findV2IgnoringCase looks through every queue in the organization for one on ref's branch in a
+// repository whose URL matches ref's apart from case. Without a match it returns notFound, not
+// ErrNotFound: the repository can't be found, so the queue can't be said to be gone.
+func (c *Client) findV2IgnoringCase(ctx context.Context, ref QueueRef, notFound error) (*Queue, error) {
+	want := strings.ToLower(fmt.Sprintf("https://%s/%s/%s", ref.Repo.Host, ref.Repo.Owner, ref.Repo.Name))
+	q := url.Values{}
+	q.Set("limit", "100")
+	for {
+		var page struct {
+			Data       []v2Queue `json:"data"`
+			NextCursor *string   `json:"nextCursor"`
+			HasMore    bool      `json:"hasMore"`
+		}
+		if err := c.do(ctx, http.MethodGet, "/v2/merge-queues", q, nil, &page, retrySafe); err != nil {
+			return nil, err
+		}
+		for i := range page.Data {
+			w := &page.Data[i]
+			if strings.ToLower(strings.TrimSuffix(w.RepositoryURL, ".git")) == want && w.TargetBranch == ref.TargetBranch {
+				// Keep the caller's spelling, so Terraform doesn't see a renamed repository.
+				return w.toQueue(ref.Repo), nil
+			}
+		}
+		if !page.HasMore || page.NextCursor == nil || *page.NextCursor == "" {
+			return nil, notFound
+		}
+		q.Set("cursor", *page.NextCursor)
+	}
+}
+
 func (c *Client) createV2(ctx context.Context, p CreateParams) (*Queue, error) {
 	repoID, err := c.repositoryID(ctx, p.Repo)
 	if err != nil {
 		return nil, err
 	}
-	s := p.Settings
+	// Only fields v2 writes with the create itself. It applies bisectionConcurrency and
+	// enqueueingLabel in a second write after creating the queue, so a failure there would leave
+	// a queue behind an error; the PATCH below sends them instead.
 	create := v2CreateRequest{
-		RepositoryID:         repoID,
-		TargetBranch:         p.TargetBranch,
-		Mode:                 modeV2Ptr(p.Mode),
-		Concurrency:          s.Concurrency,
-		BisectionConcurrency: s.BisectionConcurrency,
-		EnqueueingLabel:      s.EnqueueingLabel,
+		RepositoryID: repoID,
+		TargetBranch: p.TargetBranch,
+		Mode:         modeV2Ptr(p.Mode),
+		Concurrency:  p.Settings.Concurrency,
 	}
+	ref := QueueRef{Repo: p.Repo, TargetBranch: p.TargetBranch}
 	var created v2Queue
 	if err := c.do(ctx, http.MethodPost, "/v2/merge-queues", nil, create, &created, retryRateLimitOnly); err != nil {
 		if IsStatus(err, http.StatusConflict) {
 			return nil, ErrAlreadyExists
 		}
-		return nil, err
+		return c.createFailed(ctx, ref, err)
 	}
-	ref := QueueRef{ID: created.ID, Repo: p.Repo, TargetBranch: p.TargetBranch}
+	ref.ID = created.ID
 
-	s.Concurrency, s.BisectionConcurrency, s.EnqueueingLabel = nil, nil, nil
+	s := p.Settings
+	s.Concurrency = nil
 	if cfg := v2ConfigFrom(s); !cfg.empty() {
 		if err := c.patchConfigV2(ctx, created.ID, cfg); err != nil {
 			return c.afterCreate(ctx, ref, err)
@@ -382,7 +422,9 @@ func (c *Client) updateV2(ctx context.Context, current *Queue, mode, state *stri
 	}
 	if mode != nil {
 		body := map[string]string{"mode": *modeV2Ptr(mode)}
-		if err := c.do(ctx, http.MethodPost, "/v2/merge-queues/"+url.PathEscape(id)+"/switch-modes", nil, body, nil, retrySafe); err != nil {
+		// Not retried after a server error: if the first attempt started the switch, a retry is
+		// refused as MODE_CHANGE_IN_PROGRESS and would report a failure that didn't happen.
+		if err := c.do(ctx, http.MethodPost, "/v2/merge-queues/"+url.PathEscape(id)+"/switch-modes", nil, body, nil, retryRateLimitOnly); err != nil {
 			return nil, v2ModeConflict(err)
 		}
 	}

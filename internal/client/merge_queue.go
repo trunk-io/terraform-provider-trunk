@@ -62,6 +62,18 @@ func changed(want *string, have string) *string {
 	return want
 }
 
+// createFailed handles a create request that failed with something other than a conflict. The
+// request may still have created the queue (a lost response, or a server error after the write),
+// so it looks for it: a queue found on the branch is returned with the error, for the caller to
+// record. A conflict from a retry is not possible because creates aren't retried on 5xx.
+func (c *Client) createFailed(ctx context.Context, ref QueueRef, err error) (*Queue, error) {
+	q, getErr := c.GetQueue(ctx, ref)
+	if getErr != nil {
+		return nil, err
+	}
+	return q, fmt.Errorf("the request to create the merge queue failed, but the queue exists: %w", err)
+}
+
 // afterCreate wraps a failure that happened once the queue already existed, attaching its
 // current state when it can be read.
 func (c *Client) afterCreate(ctx context.Context, ref QueueRef, err error) (*Queue, error) {

@@ -154,13 +154,30 @@ func v1Ref(ref QueueRef) v1QueueRef {
 
 func (c *Client) getV1(ctx context.Context, ref QueueRef) (*Queue, error) {
 	var w v1Queue
-	if err := c.do(ctx, http.MethodPost, "/v1/getQueue", nil, v1Ref(ref), &w, retrySafe); err != nil {
-		if IsStatus(err, http.StatusNotFound) {
-			return nil, ErrNotFound
-		}
-		return nil, err
+	err := c.do(ctx, http.MethodPost, "/v1/getQueue", nil, v1Ref(ref), &w, retrySafe)
+	if IsStatus(err, http.StatusNotFound) {
+		return nil, c.confirmNotFoundV1(ctx, ref)
+	}
+	if err != nil {
+		return nil, v1Unauthorized(err, ref.Repo)
 	}
 	return w.toQueue(ref), nil
+}
+
+// confirmNotFoundV1 checks a 404 from getQueue, which v1 also returns for a token it doesn't
+// recognize and for a repository it can't find. An updateQueue that changes nothing tells them
+// apart: it answers 401 for those, and 404 only when the queue doesn't exist (so it never writes).
+func (c *Client) confirmNotFoundV1(ctx context.Context, ref QueueRef) error {
+	err := c.do(ctx, http.MethodPost, "/v1/updateQueue", nil, v1Ref(ref), nil, retrySafe)
+	switch {
+	case IsStatus(err, http.StatusNotFound):
+		return ErrNotFound
+	case err != nil:
+		return v1Unauthorized(err, ref.Repo)
+	}
+	// The queue exists after all; report the original answer rather than guess.
+	return fmt.Errorf("the Trunk API reported %s/%s/%s branch %q as not found, then found it; try again",
+		ref.Repo.Host, ref.Repo.Owner, ref.Repo.Name, ref.TargetBranch)
 }
 
 func (c *Client) createV1(ctx context.Context, p CreateParams) (*Queue, error) {
@@ -175,7 +192,7 @@ func (c *Client) createV1(ctx context.Context, p CreateParams) (*Queue, error) {
 		if IsStatus(err, http.StatusConflict) {
 			return nil, ErrAlreadyExists
 		}
-		return nil, v1Unauthorized(err, p.Repo)
+		return c.createFailed(ctx, ref, v1Unauthorized(err, p.Repo))
 	}
 
 	// createQueue takes only mode and concurrency; everything else is an update. This update
@@ -195,8 +212,14 @@ func (c *Client) createV1(ctx context.Context, p CreateParams) (*Queue, error) {
 
 func (c *Client) updateV1(ctx context.Context, current *Queue, mode, state *string, s Settings) (*Queue, error) {
 	ref := QueueRef{Repo: current.Repo, TargetBranch: current.TargetBranch}
+	// A mode change isn't retried after a server error: if the first attempt started the switch,
+	// trunk1 starts it again from switching_modes and the queue never leaves that state.
+	policy := retrySafe
+	if mode != nil {
+		policy = retryRateLimitOnly
+	}
 	var w v1Queue
-	if err := c.do(ctx, http.MethodPost, "/v1/updateQueue", nil, v1UpdateFrom(ref, mode, state, s), &w, retrySafe); err != nil {
+	if err := c.do(ctx, http.MethodPost, "/v1/updateQueue", nil, v1UpdateFrom(ref, mode, state, s), &w, policy); err != nil {
 		if IsStatus(err, http.StatusNotFound) {
 			return nil, ErrNotFound
 		}

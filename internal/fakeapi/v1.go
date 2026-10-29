@@ -63,28 +63,46 @@ func v1Body(q *Queue) map[string]any {
 	}
 }
 
-func (s *Server) serveV1(w http.ResponseWriter, r *http.Request, raw json.RawMessage) {
+// v1Repo resolves a repo the way trunk1 does: ignoring case, unlike v2.
+func (s *Server) v1Repo(r v1Repo) (string, bool) {
+	want := strings.ToLower(r.Host + "/" + r.Owner + "/" + r.Name)
+	for name := range s.repos {
+		if strings.ToLower(name) == want {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// serveV1 answers v1. Like trunk1, getQueue resolves the repo without checking the token first,
+// so a bad token or an unknown repo is a 404 there and a 401 everywhere else.
+func (s *Server) serveV1(w http.ResponseWriter, r *http.Request, raw json.RawMessage, authorized bool) {
 	var req v1Update
 	if err := json.Unmarshal(raw, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	repo := req.Repo.Host + "/" + req.Repo.Owner + "/" + req.Repo.Name
-	_, known := s.repos[repo]
+	repo, known := s.v1Repo(req.Repo)
+	op := strings.TrimPrefix(r.URL.Path, "/v1/")
+	if !authorized || !known {
+		if op == "getQueue" {
+			http.Error(w, "Not Found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		}
+		return
+	}
 	q := s.find(repo, req.TargetBranch)
 
-	switch strings.TrimPrefix(r.URL.Path, "/v1/") {
+	switch op {
 	case "createQueue":
-		if !known {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
 		if q != nil {
 			http.Error(w, "Merge queue already exists", http.StatusConflict)
 			return
 		}
 		s.nextID++
-		q = newQueue(fmt.Sprintf("mq-%d", s.nextID), req.Repo.Host, req.Repo.Owner, req.Repo.Name, req.TargetBranch)
+		rp := strings.SplitN(repo, "/", 3)
+		q = newQueue(fmt.Sprintf("mq-%d", s.nextID), rp[0], rp[1], rp[2], req.TargetBranch)
 		if req.Mode != nil {
 			q.Mode = *req.Mode
 		}

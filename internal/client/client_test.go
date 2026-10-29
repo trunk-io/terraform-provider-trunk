@@ -80,7 +80,10 @@ func TestRetries(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var calls atomic.Int32
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				calls.Add(1)
+				// After a failed create the client looks the queue up; count only the request under test.
+				if tc.create == (r.URL.Path == "/v1/createQueue") {
+					calls.Add(1)
+				}
 				w.WriteHeader(tc.status)
 			}))
 			defer srv.Close()
@@ -312,7 +315,23 @@ func TestV2_unknownRepository(t *testing.T) {
 	defer srv.Close()
 	c := testClient(fakeapi.V2Key, srv.URL)
 	_, err := c.CreateQueue(context.Background(), CreateParams{Repo: widgets, TargetBranch: "main"})
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("err = %v, want ErrNotFound", err)
+	if !errors.Is(err, ErrRepositoryNotFound) || errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want ErrRepositoryNotFound and not ErrNotFound", err)
 	}
+	// Reading must not report the queue as deleted either, or Terraform would forget it.
+	if _, err := c.GetQueue(context.Background(), QueueRef{Repo: widgets, TargetBranch: "main"}); errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetQueue err = %v, must not be ErrNotFound", err)
+	}
+}
+
+// A create that fails after the server committed the queue returns the queue with the error.
+func TestCreate_failureAfterCommitReturnsQueue(t *testing.T) {
+	eachAPI(t, func(t *testing.T, srv *fakeapi.Server, c *Client) {
+		path := map[APIVersion]string{V1: "/v1/createQueue", V2: "/v2/merge-queues"}[c.Version()]
+		srv.FailAfter(http.MethodPost, path, http.StatusBadGateway)
+		q, err := c.CreateQueue(context.Background(), CreateParams{Repo: widgets, TargetBranch: "main"})
+		if err == nil || q == nil {
+			t.Fatalf("q = %v, err = %v; want both", q, err)
+		}
+	})
 }

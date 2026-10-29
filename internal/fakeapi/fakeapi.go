@@ -89,11 +89,12 @@ type Server struct {
 	queues   map[string]*Queue // queue ID -> queue
 	nextID   int
 	requests []Request
+	failNext map[string][]int // "METHOD /path" -> statuses to answer, in turn, after doing the work
 }
 
 // New starts a server that knows the given repositories ("host/owner/name").
 func New(repos ...string) *Server {
-	s := &Server{repos: map[string]string{}, queues: map[string]*Queue{}}
+	s := &Server{repos: map[string]string{}, queues: map[string]*Queue{}, failNext: map[string][]int{}}
 	for i, r := range repos {
 		s.repos[r] = fmt.Sprintf("repo-%d", i+1)
 	}
@@ -117,6 +118,16 @@ func (s *Server) Queue(repo, branch string) *Queue {
 		return &c
 	}
 	return nil
+}
+
+// FailAfter makes the next request to method and path do its work and then answer status, as a
+// real server does when a later step fails or the response is lost. Each call fails one more
+// request.
+func (s *Server) FailAfter(method, path string, status int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := method + " " + path
+	s.failNext[key] = append(s.failNext[key], status)
 }
 
 // Edit changes a queue as the web app would, outside Terraform.
@@ -186,13 +197,15 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	_ = json.Unmarshal(raw, &body)
 	s.requests = append(s.requests, Request{Method: r.Method, Path: r.URL.Path, Body: body})
 
+	key := r.Method + " " + r.URL.Path
+	if statuses := s.failNext[key]; len(statuses) > 0 {
+		s.failNext[key] = statuses[1:]
+		w = &failingWriter{ResponseWriter: w, status: statuses[0]}
+	}
+
 	switch {
 	case strings.HasPrefix(r.URL.Path, "/v1/"):
-		if r.Header.Get("x-api-token") != V1Token {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		s.serveV1(w, r, raw)
+		s.serveV1(w, r, raw, r.Header.Get("x-api-token") == V1Token)
 	case strings.HasPrefix(r.URL.Path, "/v2/"):
 		if r.Header.Get("Authorization") != "Bearer "+V2Key {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -202,4 +215,23 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// failingWriter replaces whatever the handler answers with an error status.
+type failingWriter struct {
+	http.ResponseWriter
+	status  int
+	written bool
+}
+
+func (f *failingWriter) WriteHeader(int) {
+	if !f.written {
+		f.written = true
+		f.ResponseWriter.WriteHeader(f.status)
+	}
+}
+
+func (f *failingWriter) Write(b []byte) (int, error) {
+	f.WriteHeader(0)
+	return len(b), nil
 }
