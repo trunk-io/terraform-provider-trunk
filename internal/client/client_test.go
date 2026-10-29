@@ -520,18 +520,22 @@ func TestCreate_unknownOutcome(t *testing.T) {
 	}
 }
 
-// A v2 create whose final read fails still returns the created queue to record.
-func TestV2_createReadBackFailureReturnsQueue(t *testing.T) {
+// A v2 create takes the queue from its own writes' responses, with no read back.
+func TestV2_createNeedsNoReadBack(t *testing.T) {
 	srv := fakeapi.New(repoPath)
 	defer srv.Close()
 	c := testClient(fakeapi.V2Key, srv.URL)
-	ctx := context.Background()
-	// Find the new queue's path: IDs are mq<n>, and this is the first.
-	for range 4 {
-		srv.FailAfter(http.MethodGet, "/v2/merge-queues/mq1", http.StatusBadGateway)
+	q, err := c.CreateQueue(context.Background(), CreateParams{Repo: widgets, TargetBranch: "main",
+		State: ptr(StatePaused), Settings: Settings{Concurrency: ptr(4), MergeMethod: ptr("rebase")}})
+	if err != nil {
+		t.Fatal(err)
 	}
-	q, err := c.CreateQueue(ctx, CreateParams{Repo: widgets, TargetBranch: "main"})
-	if err == nil || q == nil || q.ID != "mq1" {
-		t.Fatalf("q = %+v, err = %v; want the created queue and an error", q, err)
+	if q.Concurrency != 4 || q.MergeMethod != "rebase" || q.State != StatePaused || q.ID == "" {
+		t.Fatalf("q = %+v", q)
+	}
+	for _, r := range srv.Requests() {
+		if r.Method == http.MethodGet && strings.HasPrefix(r.Path, "/v2/merge-queues/") {
+			t.Errorf("read back %s", r.Path)
+		}
 	}
 }

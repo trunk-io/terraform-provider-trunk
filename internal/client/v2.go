@@ -355,7 +355,7 @@ func (c *Client) createV2(ctx context.Context, p CreateParams) (*Queue, error) {
 		return nil, err
 	}
 	if len(repoIDs) > 1 {
-		return nil, fmt.Errorf("can't tell which of the %d records Trunk has for %s/%s/%s to create the queue in; "+
+		return nil, fmt.Errorf("%d repositories in Trunk match %s/%s/%s, so the provider can't tell which to create the queue in; "+
 			"create the queue in the Trunk app and import it, or contact Trunk support", len(repoIDs), p.Repo.Host, p.Repo.Owner, p.Repo.Name)
 	}
 	repoID := repoIDs[0]
@@ -378,38 +378,55 @@ func (c *Client) createV2(ctx context.Context, p CreateParams) (*Queue, error) {
 	}
 	ref.ID = created.ID
 
+	// Each write returns the queue as it left it (the state endpoints only its state and mode),
+	// so the result needs no read back.
+	result := created
 	s := p.Settings
 	s.Concurrency = nil
 	if cfg := v2ConfigFrom(s); !cfg.empty() {
-		if err := c.patchConfigV2(ctx, created.ID, cfg); err != nil {
+		patched, err := c.patchConfigV2(ctx, created.ID, cfg)
+		if err != nil {
 			return c.afterCreate(ctx, ref, err)
 		}
+		result = *patched
 	}
 	if p.State != nil && *p.State != StateRunning {
-		if err := c.setStateV2(ctx, created.ID, *p.State); err != nil {
+		changed, err := c.setStateV2(ctx, created.ID, *p.State)
+		if err != nil {
 			return c.afterCreate(ctx, ref, err)
 		}
+		result.State, result.Mode = changed.State, changed.Mode
 	}
-	q, err := c.getV2ByID(ctx, created.ID, p.Repo)
-	if err != nil {
-		// Record what the create returned; the next apply finishes from there.
-		return created.toQueue(p.Repo), fmt.Errorf("reading it back failed: %w", err)
-	}
-	return q, nil
+	return result.toQueue(p.Repo), nil
 }
 
-func (c *Client) patchConfigV2(ctx context.Context, id string, cfg v2Config) error {
-	err := c.do(ctx, http.MethodPatch, "/v2/merge-queues/"+url.PathEscape(id)+"/config", nil, cfg, nil, retrySafe)
-	return v2ModeConflict(err)
+// patchConfigV2 applies a config patch and returns the queue as it is afterwards.
+func (c *Client) patchConfigV2(ctx context.Context, id string, cfg v2Config) (*v2Queue, error) {
+	var w v2Queue
+	err := c.do(ctx, http.MethodPatch, "/v2/merge-queues/"+url.PathEscape(id)+"/config", nil, cfg, &w, retrySafe)
+	if err != nil {
+		return nil, v2ModeConflict(err)
+	}
+	return &w, nil
+}
+
+// v2StateChange is what the state and mode endpoints return.
+type v2StateChange struct {
+	State string `json:"state"`
+	Mode  string `json:"mode"`
 }
 
 // setStateV2 moves a queue to running, paused or draining through its own endpoint.
-func (c *Client) setStateV2(ctx context.Context, id, state string) error {
+func (c *Client) setStateV2(ctx context.Context, id, state string) (*v2StateChange, error) {
 	action := map[string]string{StateRunning: "resume", StatePaused: "pause", StateDraining: "drain"}[state]
 	if action == "" {
-		return fmt.Errorf("unsupported merge queue state %q", state)
+		return nil, fmt.Errorf("unsupported merge queue state %q", state)
 	}
-	return c.do(ctx, http.MethodPost, "/v2/merge-queues/"+url.PathEscape(id)+"/"+action, nil, nil, nil, retrySafe)
+	var out v2StateChange
+	if err := c.do(ctx, http.MethodPost, "/v2/merge-queues/"+url.PathEscape(id)+"/"+action, nil, nil, &out, retrySafe); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 func v2ModeConflict(err error) error {
@@ -424,13 +441,13 @@ func (c *Client) updateV2(ctx context.Context, current *Queue, mode, state *stri
 	id := current.ID
 	// Always sent, even with nothing to change: a write from Terraform marks the queue
 	// Terraform-managed, which clears drift the plan expects to clear.
-	if err := c.patchConfigV2(ctx, id, v2ConfigFrom(s)); err != nil {
+	if _, err := c.patchConfigV2(ctx, id, v2ConfigFrom(s)); err != nil {
 		return nil, err
 	}
 	// State before mode: the switch keeps whatever state the queue has when it starts, and a
 	// state change during a switch would abandon it.
 	if state != nil {
-		if err := c.setStateV2(ctx, id, *state); err != nil {
+		if _, err := c.setStateV2(ctx, id, *state); err != nil {
 			return nil, err
 		}
 	}

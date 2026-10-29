@@ -13,7 +13,7 @@ Only the settings in your configuration are managed. A setting you leave out kee
 
 Apply doesn't take over an existing queue: [import](#import) it first.
 
-Not managed by this provider: allowed bot submitters, Slack notifications, accepting manual re-runs of failed checks, the re-run hold time, and the fork-PR impacted-targets setting. Set those in the Trunk app.
+Not managed by this provider: allowed bot submitters, Slack notifications, and impacted targets from fork PRs. Set those in the Trunk app.
 
 With an API key, the v2 API caps some values (for example `concurrency` at 1000 and `not_ready_timeout_hours` at 720); an apply above a cap fails.
 

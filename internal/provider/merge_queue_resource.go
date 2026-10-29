@@ -223,6 +223,11 @@ func (r *mergeQueueResource) ModifyPlan(ctx context.Context, req resource.Modify
 		}
 	}
 	if req.State.Raw.IsNull() {
+		// A create. Only v2 reports these, so with the organization token they stay null.
+		if r.client != nil && r.client.Version() == client.V1 {
+			resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("managed_state"), types.StringNull())...)
+			resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("queue_id"), types.StringNull())...)
+		}
 		return
 	}
 	var prior types.String
@@ -236,6 +241,7 @@ func (r *mergeQueueResource) ModifyPlan(ctx context.Context, req resource.Modify
 	}
 	switch {
 	case r.client == nil:
+		// The provider isn't configured yet, as in validation; leave the plan to the apply.
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("managed_state"), types.StringUnknown())...)
 	case r.client.Version() == client.V2:
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("managed_state"), types.StringValue(client.ManagedStateTerraform))...)
@@ -311,12 +317,12 @@ func (r *mergeQueueResource) Create(ctx context.Context, req resource.CreateRequ
 	}
 	switch {
 	case err != nil && queue != nil:
-		resp.Diagnostics.AddError("Merge queue created but not fully configured",
+		resp.Diagnostics.AddError("Merge queue created, but the apply failed",
 			fmt.Sprintf("The merge queue for %s was created, but the apply failed: %s. Terraform marks it tainted, so the next apply replaces it. "+
 				"To keep it, run `terraform untaint <resource address>` and apply.", describe(&plan), err))
 	case errors.Is(err, client.ErrCreateUnknown):
 		resp.Diagnostics.AddError("Merge queue may have been created",
-			fmt.Sprintf("Creating the merge queue for %s failed in a way that may have created it: %s. "+
+			fmt.Sprintf("Creating the merge queue for %s failed: %s. "+
 				"If the next apply reports that it already exists, import it:\n\n  terraform import <resource address> %q", describe(&plan), err, importID(&plan)))
 	case errors.Is(err, client.ErrCreatedNotRecorded):
 		resp.Diagnostics.AddError("Merge queue created but not recorded",

@@ -21,7 +21,7 @@ make lint
 
 ## Two APIs
 
-The credential picks the API: a `trunk_v2_` key uses v2 (bearer auth, queues by ID, camelCase enums, a separate endpoint for mode and for each state); anything else is the organization API token on v1 (`x-api-token`, queues by repo and branch, one `updateQueue`). The client hides the difference, so the resource never branches on the version except for `queue_id`, `managed_state` and import by ID, which only v2 has.
+The credential picks the API: a `trunk_v2_` key uses v2 (bearer auth, queues by ID, camelCase enums, a separate endpoint for mode and for each state); anything else is the organization API token on v1 (`x-api-token`, queues by repo and branch, one `updateQueue`). The client hides the difference, so the resource never branches on the version except for `queue_id`, `managed_state` and import by ID, which only v2 has, and v1's minimum of 1 for `batching_max_wait_time_minutes`, checked at plan time.
 
 When adding a setting, add it to both APIs' request and response types in `internal/client`, to `Settings` and `Queue`, to the schema and model, and to both versions of `internal/fakeapi`. The trunk1 merge service accepts every queue field, but each API exposes only what its own layer maps (v1: trunk-io/trunk `public-api`; v2: trunk-io/trunk2 `ts/apps/public-api`).
 

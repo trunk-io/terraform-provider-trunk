@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -57,6 +58,19 @@ func (p *trunkProvider) Configure(ctx context.Context, req provider.ConfigureReq
 	}
 
 	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	// The credential picks the API, so it must be known when planning. Falling back to
+	// TRUNK_API_KEY here could plan with one API and apply with the other.
+	if config.APIKey.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(path.Root("api_key"), "Unknown API key",
+			"api_key must be known when planning. Apply what it depends on first, for example with -target, or set TRUNK_API_KEY.")
+	}
+	if config.BaseURL.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(path.Root("base_url"), "Unknown base URL",
+			"base_url must be known when planning. Apply what it depends on first, for example with -target, or set TRUNK_BASE_URL.")
+	}
 	if resp.Diagnostics.HasError() {
 		return
 	}

@@ -373,7 +373,7 @@ func TestMergeQueue_partialCreate(t *testing.T) {
 						server.FailAfter(http.MethodPost, path, http.StatusInternalServerError)
 					},
 					Config:      config,
-					ExpectError: regexp.MustCompile(`created but not fully configured`),
+					ExpectError: regexp.MustCompile(`created, but the apply failed`),
 				},
 				{
 					Config: config,
@@ -456,6 +456,28 @@ func TestMergeQueue_bisectionConcurrencyAtLeastOne(t *testing.T) {
 		Steps: []resource.TestStep{{
 			Config:      providerBlock(server, fakeapi.V2Key) + queueConfig(`bisection_concurrency = 0`),
 			ExpectError: regexp.MustCompile(`bisection_concurrency`),
+		}},
+	})
+}
+
+// The credential picks the API, so an api_key only known at apply is refused at plan time.
+func TestProvider_unknownAPIKey(t *testing.T) {
+	server := fakeapi.New(repo)
+	defer server.Close()
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{{
+			Config: `
+resource "terraform_data" "key" {
+  input = "` + fakeapi.V2Key + `"
+}
+
+provider "trunk" {
+  api_key  = terraform_data.key.output
+  base_url = "` + server.URL + `"
+}
+` + queueConfig(``),
+			ExpectError: regexp.MustCompile(`Unknown API key`),
 		}},
 	})
 }
