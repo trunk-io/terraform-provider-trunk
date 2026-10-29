@@ -13,7 +13,7 @@ terraform {
 }
 
 provider "trunk" {
-  # Or set TRUNK_API_KEY.
+  # Set api_key here, or the TRUNK_API_KEY environment variable.
 }
 
 resource "trunk_merge_queue" "main" {

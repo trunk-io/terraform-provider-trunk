@@ -273,7 +273,7 @@ func (c *Client) repositoryIDs(ctx context.Context, repo Repo) ([]string, error)
 }
 
 func repositoryNotFound(repo Repo) error {
-	return fmt.Errorf("%w: %s/%s/%s isn't connected to Trunk, or Trunk spells its owner or name with different capitals",
+	return fmt.Errorf("%w: Trunk has no repository %s/%s/%s in this API key's organization (check the owner and name, including capitals)",
 		ErrRepositoryNotFound, repo.Host, repo.Owner, repo.Name)
 }
 
