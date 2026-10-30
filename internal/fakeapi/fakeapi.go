@@ -88,18 +88,19 @@ type Server struct {
 	// reach later pages without creating 100 queues.
 	MaxPageSize int
 
-	mu       sync.Mutex
-	repos    map[string]string   // "host/owner/name" -> repository ID
-	dupes    map[string][]string // "host/owner/name" -> extra, unconnected records for it
-	queues   map[string]*Queue   // queue ID -> queue
-	nextID   int
-	requests []Request
-	failNext map[string][]int // "METHOD /path" -> statuses to answer, in turn, after doing the work
+	mu        sync.Mutex
+	repos     map[string]string   // "host/owner/name" -> repository ID
+	dupes     map[string][]string // "host/owner/name" -> extra, unconnected records for it
+	queues    map[string]*Queue   // queue ID -> queue
+	nextID    int
+	requests  []Request
+	failNext  map[string][]int // "METHOD /path" -> statuses to answer, in turn, after doing the work
+	failFirst map[string]int   // "METHOD /path" -> how many requests to refuse without doing anything
 }
 
 // New starts a server that knows the given repositories ("host/owner/name").
 func New(repos ...string) *Server {
-	s := &Server{repos: map[string]string{}, dupes: map[string][]string{}, queues: map[string]*Queue{}, failNext: map[string][]int{}}
+	s := &Server{repos: map[string]string{}, dupes: map[string][]string{}, queues: map[string]*Queue{}, failNext: map[string][]int{}, failFirst: map[string]int{}}
 	for i, r := range repos {
 		s.repos[r] = fmt.Sprintf("repo-%d", i+1)
 	}
@@ -123,6 +124,14 @@ func (s *Server) Queue(repo, branch string) *Queue {
 		return &c
 	}
 	return nil
+}
+
+// FailBefore makes the next n requests to method and path answer 502 without doing anything, as
+// a gateway does when the request never reaches the service.
+func (s *Server) FailBefore(method, path string, n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failFirst[method+" "+path] += n
 }
 
 // PassNext lets the next request to method and path through normally, ahead of failures queued
@@ -158,6 +167,19 @@ func (s *Server) Edit(repo, branch string, fn func(*Queue)) {
 	if q.ManagedState == "terraform" {
 		q.ManagedState = "terraform_with_drift"
 	}
+}
+
+// Recreate deletes the queue on repo and branch and creates a fresh one there with a new ID, as
+// someone outside Terraform would. It returns the new ID.
+func (s *Server) Recreate(repo, branch string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	old := s.find(repo, branch)
+	delete(s.queues, old.ID)
+	s.nextID++
+	q := newQueue(fmt.Sprintf("mq%d", s.nextID), old.Host, old.Owner, old.Name, branch)
+	s.queues[q.ID] = q
+	return q.ID
 }
 
 // FinishSwitches completes every pending mode switch.
@@ -217,11 +239,17 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	s.requests = append(s.requests, Request{Method: r.Method, Path: r.URL.Path, Body: body})
 
 	key := r.Method + " " + r.URL.Path
+	// Responses queued with FailAfter or PassNext come first, so a test can let an earlier request
+	// through before the ones FailBefore refuses.
 	if statuses := s.failNext[key]; len(statuses) > 0 {
 		s.failNext[key] = statuses[1:]
 		if statuses[0] != 0 {
 			w = &failingWriter{ResponseWriter: w, status: statuses[0]}
 		}
+	} else if s.failFirst[key] > 0 {
+		s.failFirst[key]--
+		http.Error(w, "Bad Gateway", http.StatusBadGateway)
+		return
 	}
 
 	switch {

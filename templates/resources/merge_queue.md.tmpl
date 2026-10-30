@@ -29,6 +29,10 @@ A change made in the Trunk app or through the API to a setting in your configura
 
 Changing `mode` on an existing queue starts a switch: the queue drains (new pull requests wait) and switches once it is empty. Until then Terraform shows the new mode and refuses any change to the queue, since changing its state would abandon the switch. To cancel a switch, use the Trunk app, then set `mode` back in your configuration, or the next apply starts the switch again.
 
+## If a create fails partway
+
+Creating a queue takes more than one request. If a later one fails, the queue exists but isn't fully set up: Terraform records it, marked tainted, so the next apply deletes and recreates it. To keep the queue and finish setting it up instead, run `terraform untaint <resource address>`, then apply.
+
 ## Deleting a queue
 
 A queue that still has pull requests can't be deleted. Set `state = "draining"`, apply, and destroy once the queue is empty.
