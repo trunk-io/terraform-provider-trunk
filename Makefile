@@ -7,10 +7,10 @@ fmt:
 	gofmt -w .
 
 test:
-	go test ./internal/client/ -v
+	go test ./...
 
 testacc:
-	TF_ACC=1 go test ./internal/provider/ -v -timeout 10m
+	TF_ACC=1 go test ./... -timeout 10m
 
 lint:
 	golangci-lint run ./...

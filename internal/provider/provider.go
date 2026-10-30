@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -33,16 +34,18 @@ func (p *trunkProvider) Metadata(_ context.Context, _ provider.MetadataRequest, 
 
 func (p *trunkProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Interact with Trunk.io services.",
+		Description: "Manage Trunk merge queues.",
 		Attributes: map[string]schema.Attribute{
 			"api_key": schema.StringAttribute{
-				Description: "API key for Trunk.io. Can also be set via the TRUNK_API_KEY environment variable.",
-				Optional:    true,
-				Sensitive:   true,
+				Description: "A Trunk API key (`trunk_v2_...`, with the **Update Merge Queue settings** permission), which uses the v2 API, " +
+					"or the organization API token, which uses the v1 API. Can also be set with the `TRUNK_API_KEY` environment variable.",
+				Optional:  true,
+				Sensitive: true,
 			},
 			"base_url": schema.StringAttribute{
-				Description: "Base URL for the Trunk API. Defaults to `https://api.trunk.io/v1`. Can also be set via the TRUNK_BASE_URL environment variable.",
-				Optional:    true,
+				Description: "The Trunk API host. Defaults to `https://api.trunk.io`. A trailing `/v1` or `/v2` is ignored, since the " +
+					"provider picks the version from the credential. Can also be set with the `TRUNK_BASE_URL` environment variable.",
+				Optional: true,
 			},
 		},
 	}
@@ -58,6 +61,19 @@ func (p *trunkProvider) Configure(ctx context.Context, req provider.ConfigureReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	// The credential picks the API, so it must be known when planning. Falling back to
+	// TRUNK_API_KEY here could plan with one API and apply with the other.
+	if config.APIKey.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(path.Root("api_key"), "Unknown API key",
+			"api_key isn't known until apply. Apply what it depends on first (for example with -target), or remove api_key and set TRUNK_API_KEY.")
+	}
+	if config.BaseURL.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(path.Root("base_url"), "Unknown base URL",
+			"base_url isn't known until apply. Apply what it depends on first (for example with -target), or remove base_url and set TRUNK_BASE_URL.")
+	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	apiKey := config.APIKey.ValueString()
 	if apiKey == "" {
@@ -66,8 +82,8 @@ func (p *trunkProvider) Configure(ctx context.Context, req provider.ConfigureReq
 	if apiKey == "" {
 		resp.Diagnostics.AddError(
 			"Missing API Key",
-			"The provider cannot create the Trunk API client because there is no API key. "+
-				"Set the api_key value in the provider configuration or use the TRUNK_API_KEY environment variable.",
+			"The provider needs a Trunk API key or the organization API token. "+
+				"Set api_key in the provider configuration or the TRUNK_API_KEY environment variable.",
 		)
 		return
 	}
@@ -76,10 +92,7 @@ func (p *trunkProvider) Configure(ctx context.Context, req provider.ConfigureReq
 	if baseURL == "" {
 		baseURL = os.Getenv("TRUNK_BASE_URL")
 	}
-	if baseURL == "" {
-		baseURL = "https://api.trunk.io/v1"
-	}
-	c := client.NewClient(apiKey, baseURL)
+	c := client.NewClient(apiKey, baseURL, p.version)
 	resp.ResourceData = c
 	resp.DataSourceData = c
 }

@@ -2,3 +2,6 @@
 extends: markdownlint/style/prettier
 # MD033: tfplugindocs generates <a id="..."> anchors in docs/ — unavoidable
 MD033: false
+# CHANGELOG.md repeats "Added"/"Fixed" under each release, as Keep a Changelog does.
+MD024:
+  siblings_only: true
