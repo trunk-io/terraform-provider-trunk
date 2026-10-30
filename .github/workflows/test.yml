@@ -10,7 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  # The repository's "Default" ruleset requires a check named "build"; keep the job name.
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
