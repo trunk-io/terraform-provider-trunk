@@ -129,4 +129,4 @@ terraform import trunk_merge_queue.main github.com/my-org/my-repo/main
 terraform import trunk_merge_queue.main xK9mP2nQ
 ```
 
-The ID is the last part of the queue's URL in the Trunk app (`app.trunk.io/<org>/merge-queue/<id>`), and its `id` in the v2 API. Importing by ID records the repository as Trunk spells it. If your configuration's `repo` differs in capitals, import by path instead, or the plan replaces the queue.
+The ID is the part after `merge-queue/` in the queue's URL in the Trunk app (`app.trunk.io/<org>/merge-queue/<id>/queue`), and its `id` in the v2 API. Importing by ID records the repository as Trunk spells it. If your configuration's `repo` differs in capitals, import by path instead, or the plan replaces the queue.
