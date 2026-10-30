@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // CreateQueue creates a merge queue and applies the rest of its settings.
@@ -15,12 +16,17 @@ func (c *Client) CreateQueue(ctx context.Context, p CreateParams) (*Queue, error
 	// Check first, so that a queue found after a failed create can only be this create's. Without
 	// it, a gateway error or dropped connection that never reached Trunk would adopt a queue
 	// someone else made, and Terraform would replace it on the next apply.
-	_, err := c.GetQueue(ctx, QueueRef{Repo: p.Repo, TargetBranch: p.TargetBranch})
-	switch {
-	case err == nil:
-		return nil, ErrAlreadyExists
-	case !errors.Is(err, ErrNotFound):
-		return nil, err
+	//
+	// v1's getQueue hard-codes github.com, so on any other host the pre-check can't see a queue
+	// without writing (see confirmNotFoundV1). Skip it and let createQueue's conflict speak.
+	if !(c.version == V1 && !strings.EqualFold(p.Repo.Host, "github.com")) {
+		_, err := c.GetQueue(ctx, QueueRef{Repo: p.Repo, TargetBranch: p.TargetBranch})
+		switch {
+		case err == nil:
+			return nil, ErrAlreadyExists
+		case !errors.Is(err, ErrNotFound):
+			return nil, err
+		}
 	}
 	if c.version == V2 {
 		return c.createV2(ctx, p)
@@ -40,13 +46,22 @@ func (c *Client) GetQueue(ctx context.Context, ref QueueRef) (*Queue, error) {
 //
 // While a queue is switching modes it refuses with ErrSwitchingModes: changing its state then
 // would abandon the switch on both APIs, and v2 also refuses settings changes.
+//
+// When the reference carries a queue ID that no longer exists, GetQueue reports not found (it does
+// not adopt a replacement on the branch). This looks the branch up itself and refuses with
+// QueueReplacedError before writing, so a plan that skipped refresh can't overwrite the new queue.
 func (c *Client) UpdateQueue(ctx context.Context, p UpdateParams) (*Queue, error) {
 	current, err := c.GetQueue(ctx, p.Ref)
+	if errors.Is(err, ErrNotFound) && p.Ref.ID != "" && c.version == V2 {
+		replacement, branchErr := c.getV2ByBranch(ctx, QueueRef{Repo: p.Ref.Repo, TargetBranch: p.Ref.TargetBranch})
+		if branchErr == nil && replacement.ID != p.Ref.ID {
+			return nil, &QueueReplacedError{OldID: p.Ref.ID, NewID: replacement.ID}
+		}
+		return nil, err
+	}
 	if err != nil {
 		return nil, err
 	}
-	// GetQueue falls back to the branch when the ID is gone. Writing to that queue would change one
-	// Terraform doesn't know about, so refuse before writing.
 	if p.Ref.ID != "" && current.ID != "" && current.ID != p.Ref.ID {
 		return nil, &QueueReplacedError{OldID: p.Ref.ID, NewID: current.ID}
 	}

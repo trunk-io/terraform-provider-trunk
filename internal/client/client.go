@@ -107,10 +107,12 @@ type retryPolicy int
 
 const (
 	// retrySafe retries rate limits, 5xx responses and network failures. For reads and for
-	// writes that are safe to repeat.
+	// writes that are safe to repeat: config patches, deletes, and pause/resume/drain (each
+	// ends in the same state if retried). Mode switches and creates use retryRateLimitOnly.
 	retrySafe retryPolicy = iota
 	// retryRateLimitOnly retries only 429s, which the server rejects before doing anything.
-	// For creates, where a retry after a lost response would conflict with itself.
+	// For creates and mode switches, where a retry after a lost response would conflict with
+	// itself or restart a switch.
 	retryRateLimitOnly
 )
 
