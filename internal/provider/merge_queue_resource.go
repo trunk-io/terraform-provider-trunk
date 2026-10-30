@@ -87,6 +87,28 @@ func identity(description string) schema.StringAttribute {
 	}
 }
 
+// repoIdentity is like identity, but a change that only differs in letter case does not replace
+// the queue. v2 matches repository names exactly, so import-by-ID records Trunk's spelling; a
+// config that differs only in capitals would otherwise destroy the queue and fail to recreate it.
+func repoIdentity(description string) schema.StringAttribute {
+	return schema.StringAttribute{
+		Description: description,
+		Required:    true,
+		Validators:  []validator.String{stringvalidator.LengthAtLeast(1)},
+		PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplaceIf(
+			func(_ context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
+				if req.StateValue.IsNull() || req.PlanValue.IsNull() {
+					resp.RequiresReplace = true
+					return
+				}
+				resp.RequiresReplace = !strings.EqualFold(req.StateValue.ValueString(), req.PlanValue.ValueString())
+			},
+			"replace the merge queue when the repository host, owner or name changes, ignoring letter case",
+			"replace the merge queue when the repository host, owner or name changes, ignoring letter case",
+		)},
+	}
+}
+
 // A batching rule pattern matches exactly, or as a prefix when it ends in one `*`.
 var targetPatternRegexp = regexp.MustCompile(`^[^*\s](?:[^*]*[^*\s])?\*?$`)
 
@@ -110,12 +132,12 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Computed: true,
 			},
 			"repo": schema.SingleNestedAttribute{
-				Description: "The repository the queue belongs to. Changing it replaces the queue.",
+				Description: "The repository the queue belongs to. Changing it replaces the queue. A change that only differs in letter case updates state in place (v2 matches names exactly; import-by-ID keeps Trunk's spelling until the next apply).",
 				Required:    true,
 				Attributes: map[string]schema.Attribute{
-					"host":  identity("Repository host, such as `github.com`."),
-					"owner": identity("Repository owner (organization or user)."),
-					"name":  identity("Repository name."),
+					"host":  repoIdentity("Repository host, such as `github.com`."),
+					"owner": repoIdentity("Repository owner (organization or user)."),
+					"name":  repoIdentity("Repository name."),
 				},
 			},
 			"target_branch": identity("The branch the queue merges into. Changing it replaces the queue."),
@@ -221,6 +243,16 @@ func (r *mergeQueueResource) ModifyPlan(ctx context.Context, req resource.Modify
 				"batching_max_wait_time_minutes = 0 needs an API key; with the organization API token the minimum is 1.")
 			return
 		}
+	}
+	var plan mergeQueueResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	// id is derived from repo + branch. When repo casing changes in place (no replace), keep it
+	// aligned with the plan so apply doesn't see an inconsistent new value.
+	if plan.Repo != nil && known(plan.Repo.Host) && known(plan.Repo.Owner) && known(plan.Repo.Name) && known(plan.TargetBranch) {
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("id"), types.StringValue(importID(&plan)))...)
 	}
 	if req.State.Raw.IsNull() {
 		// A create. Only v2 reports these, so with the organization token they stay null.
@@ -345,8 +377,19 @@ func (r *mergeQueueResource) Read(ctx context.Context, req resource.ReadRequest,
 		resp.State.RemoveResource(ctx)
 		return
 	}
+	if errors.Is(err, client.ErrV1HostUnsupported) {
+		// v1 getQueue can't see this host; confirming would write on every refresh. Keep state so
+		// destroy can still run (deleteQueue uses the request host), and point at an API key.
+		resp.Diagnostics.AddWarning("Can't refresh merge queue with the organization API token",
+			fmt.Sprintf("The merge queue for %s couldn't be refreshed: %s. State is unchanged.", describe(&state), err))
+		return
+	}
 	if err != nil {
-		resp.Diagnostics.AddError("Error reading merge queue", fmt.Sprintf("Could not read the merge queue for %s: %s", describe(&state), err))
+		msg := fmt.Sprintf("Could not read the merge queue for %s: %s", describe(&state), err)
+		if errors.Is(err, client.ErrRepositoryNotFound) {
+			msg += "\n\nIf the repository was removed from Trunk, drop this resource from state with:\n\n  terraform state rm <resource address>"
+		}
+		resp.Diagnostics.AddError("Error reading merge queue", msg)
 		return
 	}
 
@@ -381,7 +424,9 @@ func (r *mergeQueueResource) Update(ctx context.Context, req resource.UpdateRequ
 	if errors.As(err, &replaced) {
 		resp.Diagnostics.AddError("Merge queue was replaced outside Terraform",
 			fmt.Sprintf("The merge queue for %s now has ID %s, not %s, so nothing was changed. "+
-				"Run `terraform apply -refresh-only` to record it, then apply again.", describe(&plan), replaced.NewID, replaced.OldID))
+				"A refresh drops the old ID from state (it does not adopt the replacement). "+
+				"Then import the new queue before applying again:\n\n  terraform import <resource address> %q",
+				describe(&plan), replaced.NewID, replaced.OldID, replaced.NewID))
 		return
 	}
 	if err != nil {

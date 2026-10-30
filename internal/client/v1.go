@@ -169,7 +169,16 @@ func (c *Client) getV1(ctx context.Context, ref QueueRef) (*Queue, error) {
 // recognize and for a repository it can't find. An updateQueue that changes nothing tells them
 // apart: it answers 401 for those, and 404 only when the queue doesn't exist. It writes only if the
 // queue was created between the two calls, and then only marks it Terraform-managed.
+//
+// trunk1's getQueue looks the repository up as github.com regardless of the request host
+// (routes_protected getRepoIdForApiToken), while updateQueue uses the host as sent. For any other
+// host a getQueue 404 is expected even when the queue exists; confirming with updateQueue would
+// mark it Terraform-managed and notify on every refresh. Refuse without writing and point at an
+// API key instead.
 func (c *Client) confirmNotFoundV1(ctx context.Context, ref QueueRef) error {
+	if !strings.EqualFold(ref.Repo.Host, "github.com") {
+		return fmt.Errorf("%w (got %q); use an API key to refresh this queue", ErrV1HostUnsupported, ref.Repo.Host)
+	}
 	err := c.do(ctx, http.MethodPost, "/v1/updateQueue", nil, v1Ref(ref), nil, retrySafe)
 	switch {
 	case IsStatus(err, http.StatusNotFound):

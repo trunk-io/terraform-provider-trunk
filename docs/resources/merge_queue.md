@@ -64,7 +64,7 @@ A queue that still has pull requests can't be deleted. Set `state = "draining"`,
 
 ### Required
 
-- `repo` (Attributes) The repository the queue belongs to. Changing it replaces the queue. (see [below for nested schema](#nestedatt--repo))
+- `repo` (Attributes) The repository the queue belongs to. Changing it replaces the queue. A change that only differs in letter case updates state in place (v2 matches names exactly; import-by-ID keeps Trunk's spelling until the next apply). (see [below for nested schema](#nestedatt--repo))
 - `target_branch` (String) The branch the queue merges into. Changing it replaces the queue.
 
 ### Optional
@@ -129,4 +129,4 @@ terraform import trunk_merge_queue.main github.com/my-org/my-repo/main
 terraform import trunk_merge_queue.main xK9mP2nQ
 ```
 
-The ID is the part after `merge-queue/` in the queue's URL in the Trunk app (`app.trunk.io/<org>/merge-queue/<id>/queue`), and its `id` in the v2 API. Importing by ID records the repository as Trunk spells it. If your configuration's `repo` differs in capitals, import by path instead, or the plan replaces the queue.
+The ID is the part after `merge-queue/` in the queue's URL in the Trunk app (`app.trunk.io/<org>/merge-queue/<id>/queue`), and its `id` in the v2 API. Importing by ID records the repository as Trunk spells it. If your configuration's `repo` differs only in capitals, the next apply updates state to your spelling in place (v2 still addresses the same repository). If it differs by more than case, import by path instead.
