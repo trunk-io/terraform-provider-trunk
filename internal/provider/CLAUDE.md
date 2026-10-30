@@ -1,22 +1,18 @@
 # internal/provider
 
-Terraform provider and resource implementations. Bridges the `internal/client` package to the Terraform Plugin Framework.
-
-## Files
-
-- `provider.go` — Provider definition, auth schema, `Configure` (creates `*client.Client` from `api_key`/`TRUNK_API_KEY`), and resource registration
-- `merge_queue_resource.go` — `trunk_merge_queue` resource: schema, CRUD operations, and `ImportState`
-- `merge_queue_resource_model.go` — Terraform state model (`mergeQueueResourceModel`) and conversion helpers between Terraform types and `internal/client` request/response structs
+The provider (`provider.go`) and the `trunk_merge_queue` resource (`merge_queue_resource.go`, `merge_queue_resource_model.go`).
 
 ## Conventions
 
-- Keep all Terraform Plugin Framework imports here; `internal/client` must remain free of them
-- `mergeQueueResourceModel.fromQueue` populates state from the API; `toCreateRequest`/`toUpdateRequest` build API request structs
-- All configurable fields are Computed + Optional with `UseStateForUnknown`; the API returns every field in getQueue/updateQueue responses
-- All enum values are lowercase (e.g., `"running"`, `"squash"`, `"off"`, `"bisection_skip_redundant_tests"`)
-- `null` `required_statuses` sends `deleteRequiredStatuses: true` to revert to branch protection / trunk.yaml defaults
-- Import ID format: `{host}/{owner}/{name}/{target_branch}` (uses `strings.SplitN(..., 4)` to support branch names with slashes)
+- Every setting is Optional + Computed with `UseNonNullStateForUnknown`; a null prior (state from 1.x or from the other API version) plans as unknown so the apply can fill it. Only attributes set in the configuration are sent; an omitted one is left as the queue has it. `settings()` builds the request from config-set attributes.
+- `required_statuses` and `batching_rules` are sets: the API sorts required statuses, and order means nothing for either.
+- `fromQueue` writes the API's view into the model. While the queue is switching modes it keeps the expected mode and state, so an apply that starts a switch matches its plan and the next plan doesn't fight it.
+- `ModifyPlan` plans `managed_state`: unchanged when nothing else changes; otherwise `terraform` on v2, and null (with `queue_id`) on v1, including on create. With the organization token it also rejects `batching_max_wait_time_minutes = 0`.
+- `Configure` refuses an unknown `api_key` or `base_url`: the credential picks the API, so it must be known when planning.
+- `Update` refuses when the API returns a different `queue_id` than the state's (the queue was recreated outside Terraform): the plan carried the old ID.
+- Enum values are lowercase snake_case, matching v1.
+- Import IDs: `{host}/{owner}/{name}/{target_branch}` (`SplitN(..., 4)` keeps slashes in branch names), or a v2 queue ID with an API key.
 
-## References
+## Tests
 
-- TRD: `docs/trd/terraform-provider-trunk.md`
+`merge_queue_resource_test.go` runs Terraform against `internal/fakeapi` for both credentials (`resource.UnitTest`, no `TF_ACC`). `upgrade_test.go` applies with the last 1.x release from the registry, then plans with this build; it needs `TF_ACC=1`.

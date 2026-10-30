@@ -1,0 +1,46 @@
+---
+page_title: "{{.Name}} {{.Type}} - {{.ProviderName}}"
+subcategory: ""
+description: |-
+{{ .Description | plainmarkdown | trimspace | prefixlines "  " }}
+---
+
+# {{.Name}} ({{.Type}})
+
+{{ .Description | trimspace }}
+
+Only the settings in your configuration are managed. A setting you leave out keeps whatever value the queue has, including one set in the Trunk app.
+
+Apply doesn't take over an existing queue: [import](#import) it first.
+
+Not managed by this provider: Slack notifications and impacted targets from fork PRs. Set those in the Trunk app. To let a bot submit pull requests, approve it under **Settings** → **Organization** → **Bots** in the Trunk app.
+
+With an API key, the v2 API caps some values (for example `concurrency` at 1000 and `not_ready_timeout_hours` at 720); an apply above a cap fails.
+
+## Example Usage
+
+{{ tffile "examples/resources/trunk_merge_queue/resource.tf" }}
+
+## Changing settings outside Terraform
+
+A change made in the Trunk app or through the API to a setting in your configuration shows up in the next plan, and apply reverts it. A change to a setting you left out is kept. With an API key, `managed_state` reads `terraform_with_drift` after either, until the next apply that changes the queue.
+
+## Switching modes
+
+Changing `mode` on an existing queue starts a switch: the queue drains (new pull requests wait) and switches once it is empty. Until then Terraform shows the new mode and refuses any change to the queue, since changing its state would abandon the switch. To cancel a switch, use the Trunk app, then set `mode` back in your configuration, or the next apply starts the switch again.
+
+## If a create fails partway
+
+Creating a queue takes more than one request. If a later one fails, the queue exists but isn't fully set up: Terraform records it, marked tainted, so the next apply deletes and recreates it. To keep the queue and finish setting it up instead, run `terraform untaint <resource address>`, then apply.
+
+## Deleting a queue
+
+A queue that still has pull requests can't be deleted. Set `state = "draining"`, apply, and destroy once the queue is empty.
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+{{ codefile "shell" "examples/resources/trunk_merge_queue/import.sh" }}
+
+The ID is the part after `merge-queue/` in the queue's URL in the Trunk app (`app.trunk.io/<org>/merge-queue/<id>/queue`), and its `id` in the v2 API. Importing by ID records the repository as Trunk spells it. If your configuration's `repo` differs in capitals, import by path instead, or the plan replaces the queue.
