@@ -4,17 +4,25 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-## [2.0.0]
+## [2.0.1]
+
+### Fixed
+
+- Docs: the import example uses a real queue ID (a UUID).
+- Docs: removed the warning against setting `required_statuses` with an API key; trunk-io/trunk2#7764 is deployed.
+- Changelog: corrected the 2.0.0 upgrade notes on `tolist()` and when `queue_id` and `managed_state` are recorded.
+
+## [2.0.0] - 2026-11-02
 
 ### Upgrading from 1.x
 
 Change the version constraint to `~> 2.0` and run `terraform init -upgrade`. Existing state loads as is, the first plan is empty, and the organization API token keeps working.
 
 - **Leaving out `required_statuses` no longer clears the queue's override.** 1.x reset it on every apply. To remove an override, set `required_statuses = []`. (`[]` never meant "require no checks": 1.x documented that, but the API ignored an empty list.)
-- **`required_statuses` is a set**, so order doesn't matter. References such as `required_statuses[0]` need `tolist()`.
+- **`required_statuses` is a set**, so order doesn't matter. Wrap references such as `required_statuses[0]` in `sort()`: `sort(trunk_merge_queue.main.required_statuses)[0]`.
 - **`base_url` is the API host**, such as `https://api.trunk.io`. A value ending in `/v1` still works.
 - **`api_key` and `base_url` must be known at plan time.** If one comes from a resource not yet created, apply that first. 1.x fell back to `TRUNK_API_KEY` and `TRUNK_BASE_URL` while they were unknown.
-- **To use an API key**, swap it in for the token. Nothing else changes; `queue_id` and `managed_state` fill in on the next refresh. **Do not set `required_statuses` with an API key until trunk-io/trunk2#7764 is deployed to the API you talk to** — until then, v2 reads an override back garbled and apply fails with "Provider produced inconsistent result". The organization API token is unaffected.
+- **To use an API key**, swap it in for the token. Nothing else changes; the next `terraform apply` records `queue_id` and `managed_state`.
 
 ### Added
 
@@ -54,7 +62,8 @@ Change the version constraint to `~> 2.0` and run `terraform init -upgrade`. Exi
 
 - First releases (0.1.0–0.1.3): the `trunk_merge_queue` resource, with create, read, update, delete and import, through the v1 API with the organization API token.
 
-[Unreleased]: https://github.com/trunk-io/terraform-provider-trunk/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/trunk-io/terraform-provider-trunk/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/trunk-io/terraform-provider-trunk/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/trunk-io/terraform-provider-trunk/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/trunk-io/terraform-provider-trunk/compare/v1.0.4...v1.1.0
 [1.0.4]: https://github.com/trunk-io/terraform-provider-trunk/compare/v0.1.3...v1.0.4

@@ -126,7 +126,7 @@ Required:
 terraform import trunk_merge_queue.main github.com/my-org/my-repo/main
 
 # Or, with an API key, by the queue's v2 ID.
-terraform import trunk_merge_queue.main xK9mP2nQ
+terraform import trunk_merge_queue.main a3e06cc2-798d-4907-a021-7966dd00b555
 ```
 
 The ID is the part after `merge-queue/` in the queue's URL in the Trunk app (`app.trunk.io/<org>/merge-queue/<id>/queue`), and its `id` in the v2 API. Importing by ID records the repository as Trunk spells it. If your configuration's `repo` differs only in capitals, the next apply updates state to your spelling in place (v2 still addresses the same repository). If it differs by more than case, import by path instead.
