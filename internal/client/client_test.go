@@ -394,6 +394,51 @@ func TestUpdate_replacedQueueRefusedBeforeWriting(t *testing.T) {
 	}
 }
 
+// GetQueue with a gone ID must not return the queue now on the branch (Read would adopt it).
+func TestGet_staleIDDoesNotAdoptReplacement(t *testing.T) {
+	srv := fakeapi.New(repoPath)
+	defer srv.Close()
+	c := testClient(fakeapi.V2Key, srv.URL)
+	ctx := context.Background()
+	old, err := c.CreateQueue(ctx, CreateParams{Repo: widgets, TargetBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newID := srv.Recreate(repoPath, "main")
+	_, err = c.GetQueue(ctx, QueueRef{ID: old.ID, Repo: widgets, TargetBranch: "main"})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+	q, err := c.GetQueue(ctx, QueueRef{Repo: widgets, TargetBranch: "main"})
+	if err != nil || q.ID != newID {
+		t.Fatalf("by branch: q = %+v, err = %v", q, err)
+	}
+}
+
+// v1 getQueue hard-codes github.com; confirming a 404 with updateQueue would write on every
+// refresh for GitHub Enterprise. Refuse without writing.
+func TestV1_nonGitHubHostGetDoesNotWrite(t *testing.T) {
+	const ghe = "github.example.com/acme/widgets"
+	srv := fakeapi.New(ghe)
+	defer srv.Close()
+	c := testClient(fakeapi.V1Token, srv.URL)
+	repo := Repo{Host: "github.example.com", Owner: "acme", Name: "widgets"}
+	ctx := context.Background()
+	if _, err := c.CreateQueue(ctx, CreateParams{Repo: repo, TargetBranch: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	before := len(srv.Requests())
+	_, err := c.GetQueue(ctx, QueueRef{Repo: repo, TargetBranch: "main"})
+	if !errors.Is(err, ErrV1HostUnsupported) || errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want ErrV1HostUnsupported and not ErrNotFound", err)
+	}
+	for _, r := range srv.Requests()[before:] {
+		if r.Path == "/v1/updateQueue" {
+			t.Fatalf("confirm wrote %s", r.Path)
+		}
+	}
+}
+
 func TestV2_duplicateRepositoryRecords(t *testing.T) {
 	srv := fakeapi.New(repoPath)
 	defer srv.Close()

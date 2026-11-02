@@ -75,15 +75,21 @@ func (s *Server) v1Repo(r v1Repo) (string, bool) {
 }
 
 // serveV1 answers v1. Like trunk1, getQueue resolves the repo without checking the token first,
-// so a bad token or an unknown repo is a 404 there and a 401 everywhere else.
+// so a bad token or an unknown repo is a 404 there and a 401 everywhere else. getQueue also looks
+// the repository up as github.com regardless of the request host (trunk1 getRepoIdForApiToken);
+// updateQueue and the other ops use the host as sent.
 func (s *Server) serveV1(w http.ResponseWriter, r *http.Request, raw json.RawMessage, authorized bool) {
 	var req v1Update
 	if err := json.Unmarshal(raw, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	repo, known := s.v1Repo(req.Repo)
 	op := strings.TrimPrefix(r.URL.Path, "/v1/")
+	lookup := req.Repo
+	if op == "getQueue" {
+		lookup.Host = "github.com"
+	}
+	repo, known := s.v1Repo(lookup)
 	if !authorized || !known {
 		if op == "getQueue" {
 			http.Error(w, "Not Found", http.StatusNotFound)

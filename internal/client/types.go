@@ -34,6 +34,10 @@ var (
 	// ErrRepositoryNotFound means the API couldn't find the repository. It is not ErrNotFound:
 	// the queue may well exist, so a caller must not treat it as deleted.
 	ErrRepositoryNotFound = errors.New("repository not found")
+	// ErrV1HostUnsupported means v1's getQueue can't look up this repository host (it hard-codes
+	// github.com). The queue may exist; the caller must not treat it as deleted or confirm with a
+	// write. Use an API key.
+	ErrV1HostUnsupported = errors.New("the v1 getQueue API only looks up github.com repositories")
 	// ErrCreatedNotRecorded means a create made the queue but it couldn't be read back, so the
 	// caller has nothing to record.
 	ErrCreatedNotRecorded = errors.New("couldn't read it back")

@@ -14,7 +14,7 @@ Change the version constraint to `~> 2.0` and run `terraform init -upgrade`. Exi
 - **`required_statuses` is a set**, so order doesn't matter. References such as `required_statuses[0]` need `tolist()`.
 - **`base_url` is the API host**, such as `https://api.trunk.io`. A value ending in `/v1` still works.
 - **`api_key` and `base_url` must be known at plan time.** If one comes from a resource not yet created, apply that first. 1.x fell back to `TRUNK_API_KEY` and `TRUNK_BASE_URL` while they were unknown.
-- **To use an API key**, swap it in for the token. Nothing else changes; `queue_id` and `managed_state` fill in on the next refresh.
+- **To use an API key**, swap it in for the token. Nothing else changes; `queue_id` and `managed_state` fill in on the next refresh. **Do not set `required_statuses` with an API key until trunk-io/trunk2#7764 is deployed to the API you talk to** — until then, v2 reads an override back garbled and apply fails with "Provider produced inconsistent result". The organization API token is unaffected.
 
 ### Added
 
@@ -28,6 +28,8 @@ Change the version constraint to `~> 2.0` and run `terraform init -upgrade`. Exi
 
 - Applying `required_statuses` in any order but alphabetical failed with "Provider produced inconsistent result after apply".
 - A refresh with a wrong or revoked organization API token, or for a repository Trunk can't find, removed the queue from state. v1 answers both as "not found"; the provider now checks, and reports the token or repository.
+- A refresh no longer adopts a queue that was recreated outside Terraform (matching create, which refuses to take one over). Without a refresh, an update by the old ID is still refused before any write; import the new queue after a refresh drops the old ID.
+- A refresh with the organization API token for a non-`github.com` host no longer sends a confirming `updateQueue` (v1's `getQueue` hard-codes `github.com`, so that confirm was a write on every refresh). State is kept with a warning; use an API key to refresh those hosts.
 - While a queue switched modes, the next apply sent its state back, which abandoned the switch. Terraform now shows the new mode and refuses changes until the switch finishes.
 - A retried mode change could leave a queue switching modes for good. Mode changes are no longer retried after a server error.
 - A create that failed after the queue was made left nothing in state, so the next apply failed with "already exists". The provider now checks the branch before creating, and after a server error looks for the queue and records it; Terraform replaces it on the next apply, or `terraform untaint` keeps it.

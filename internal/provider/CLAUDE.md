@@ -9,7 +9,8 @@ The provider (`provider.go`) and the `trunk_merge_queue` resource (`merge_queue_
 - `fromQueue` writes the API's view into the model. While the queue is switching modes it keeps the expected mode and state, so an apply that starts a switch matches its plan and the next plan doesn't fight it.
 - `ModifyPlan` plans `managed_state`: unchanged when nothing else changes; otherwise `terraform` on v2, and null (with `queue_id`) on v1, including on create. With the organization token it also rejects `batching_max_wait_time_minutes = 0`.
 - `Configure` refuses an unknown `api_key` or `base_url`: the credential picks the API, so it must be known when planning.
-- `Update` refuses when the API returns a different `queue_id` than the state's (the queue was recreated outside Terraform): the plan carried the old ID.
+- `Update` refuses when the queue on the branch has a different ID than the state's (recreated outside Terraform) without a refresh. A refresh that finds the old ID gone drops the resource from state (`ErrNotFound`) rather than adopting the replacement — matching create, which refuses to take over a queue already on the branch.
+- Repo `host`/`owner`/`name` replace only when they differ ignoring case, so import-by-ID with a differently-capitalized config updates state in place instead of destroy+create (which would fail: v2 create matches names exactly).
 - Enum values are lowercase snake_case, matching v1.
 - Import IDs: `{host}/{owner}/{name}/{target_branch}` (`SplitN(..., 4)` keeps slashes in branch names), or a v2 queue ID with an API key.
 

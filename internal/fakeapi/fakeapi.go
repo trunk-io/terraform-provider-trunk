@@ -8,6 +8,8 @@
 //     FinishSwitches runs. v2 refuses config and mode changes meanwhile.
 //   - A write with x-source: terraform marks the queue Terraform-managed; Edit marks drift.
 //   - v2's PATCH rejects unknown fields, and v2 enforces its ranges.
+//   - v1 getQueue looks the repository up as github.com regardless of the request host; the
+//     other v1 ops use the host as sent.
 package fakeapi
 
 import (
@@ -113,6 +115,13 @@ func (s *Server) Requests() []Request {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]Request(nil), s.requests...)
+}
+
+// ResetRequests forgets requests received so far, so a later check can see only what followed.
+func (s *Server) ResetRequests() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.requests = nil
 }
 
 // Queue returns a copy of the queue on host/owner/name and branch, or nil.

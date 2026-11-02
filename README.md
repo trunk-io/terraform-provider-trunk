@@ -33,7 +33,7 @@ resource "trunk_merge_queue" "main" {
 
 Use an API key: an organization admin creates one under **Settings** → **Developer** → **API Keys** in the Trunk app, with the **Update Merge Queue settings** permission. Pass it in `api_key` or `TRUNK_API_KEY`.
 
-The provider picks the API from the credential. An API key (`trunk_v2_...`) uses v2. The organization API token, on the same page, still works but uses v1, which will be deprecated soon.
+The provider picks the API from the credential. An API key (`trunk_v2_...`) uses v2. The organization API token, on the same page, still works but uses v1, which will be deprecated soon. Until [trunk-io/trunk2#7764](https://github.com/trunk-io/trunk2/pull/7764) is deployed to the API you use, don't set `required_statuses` with an API key — v2 can read an override back garbled.
 
 Upgrading from 1.x? See the [upgrade notes](CHANGELOG.md#200).
 
