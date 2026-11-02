@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/trunk-io/terraform-provider-trunk/internal/client"
 	"github.com/trunk-io/terraform-provider-trunk/internal/fakeapi"
 )
 
@@ -102,13 +104,46 @@ func TestMergeQueue_replacedQueueRefusedWithoutRefresh(t *testing.T) {
 			{
 				PreConfig:   func() { newID = server.Recreate(repo, "main") },
 				Config:      p + queueConfig(`concurrency = 7`),
-				ExpectError: regexp.MustCompile(`replaced outside Terraform(.|\n)*nothing was changed`),
+				ExpectError: regexp.MustCompile(`replaced outside Terraform(.|\n)*import the new queue`),
 			},
 		},
 		CheckDestroy: func(*terraform.State) error {
 			for _, r := range server.Requests() {
 				if r.Method != http.MethodGet && strings.Contains(r.Path, newID) {
 					return fmt.Errorf("touched the replacement queue: %s %s", r.Method, r.Path)
+				}
+			}
+			if q := server.Queue(repo, "main"); q == nil || q.ID != newID || q.Concurrency != 5 {
+				return fmt.Errorf("replacement queue = %+v", q)
+			}
+			return nil
+		},
+	})
+}
+
+// With a normal refresh, a recreated queue is not adopted: the resource leaves state, and the
+// replacement on the branch is left alone (matching create, which refuses to take one over).
+func TestMergeQueue_replacedQueueDroppedOnRefresh(t *testing.T) {
+	server := fakeapi.New(repo)
+	defer server.Close()
+	p := providerBlock(server, fakeapi.V2Key)
+	var newID string
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{Config: p + queueConfig(`concurrency = 6`)},
+			{
+				PreConfig: func() { newID = server.Recreate(repo, "main") },
+				Config:    p + queueConfig(`concurrency = 7`),
+				// The old ID is gone, so refresh drops the resource; apply then tries to create
+				// and hits the replacement still on the branch.
+				ExpectError: regexp.MustCompile(`already exists`),
+			},
+		},
+		CheckDestroy: func(*terraform.State) error {
+			for _, r := range server.Requests() {
+				if r.Method == http.MethodDelete && strings.Contains(r.Path, newID) {
+					return fmt.Errorf("deleted the replacement queue: %s", r.Path)
 				}
 			}
 			if q := server.Queue(repo, "main"); q == nil || q.ID != newID || q.Concurrency != 5 {
@@ -196,18 +231,25 @@ func TestMergeQueue_importWhileSwitching(t *testing.T) {
 	server := fakeapi.New(repo)
 	defer server.Close()
 	p := providerBlock(server, fakeapi.V2Key)
+	c := client.NewClient(fakeapi.V2Key, server.URL, "test")
+	concurrency := 6
+	created, err := c.CreateQueue(context.Background(), client.CreateParams{
+		Repo: client.Repo{Host: "github.com", Owner: "acme", Name: "widgets"}, TargetBranch: "main",
+		Settings: client.Settings{Concurrency: &concurrency},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.Edit(repo, "main", func(q *fakeapi.Queue) { q.State = "switching_modes" })
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
-			{Config: p + queueConfig(`concurrency = 6`)},
 			{
-				PreConfig: func() {
-					server.Edit(repo, "main", func(q *fakeapi.Queue) { q.State = "switching_modes" })
-				},
-				Config:        p + queueConfig(`concurrency = 6`),
-				ResourceName:  "trunk_merge_queue.main",
-				ImportState:   true,
-				ImportStateId: repo + "/main",
+				Config:             p + queueConfig(`concurrency = 6`),
+				ResourceName:       "trunk_merge_queue.main",
+				ImportState:        true,
+				ImportStateId:      created.ID,
+				ImportStatePersist: true,
 				ImportStateCheck: func(states []*terraform.InstanceState) error {
 					if got := states[0].Attributes["state"]; got != "switching_modes" {
 						return fmt.Errorf("imported state = %q", got)
@@ -218,6 +260,101 @@ func TestMergeQueue_importWhileSwitching(t *testing.T) {
 			{
 				Config:      p + queueConfig(`concurrency = 7`),
 				ExpectError: regexp.MustCompile(`switching modes`),
+			},
+		},
+	})
+}
+
+// Import-by-ID records Trunk's repo spelling; a config that differs only in capitals must not
+// destroy the queue (v2 create matches names exactly and would then fail).
+func TestMergeQueue_importByIDCaseOnlyConfig(t *testing.T) {
+	server := fakeapi.New(repo)
+	defer server.Close()
+	p := providerBlock(server, fakeapi.V2Key)
+	c := client.NewClient(fakeapi.V2Key, server.URL, "test")
+	concurrency := 6
+	created, err := c.CreateQueue(context.Background(), client.CreateParams{
+		Repo: client.Repo{Host: "github.com", Owner: "acme", Name: "widgets"}, TargetBranch: "main",
+		Settings: client.Settings{Concurrency: &concurrency},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	queueID := created.ID
+	cased := p + `
+resource "trunk_merge_queue" "main" {
+  repo = {
+    host  = "github.com"
+    owner = "Acme"
+    name  = "widgets"
+  }
+  target_branch = "main"
+  concurrency   = 6
+}
+`
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config:             cased,
+				ResourceName:       "trunk_merge_queue.main",
+				ImportState:        true,
+				ImportStateId:      queueID,
+				ImportStatePersist: true,
+			},
+			{
+				Config: cased,
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction("trunk_merge_queue.main", plancheck.ResourceActionUpdate),
+					},
+				},
+				Check: func(*terraform.State) error {
+					if q := server.Queue(repo, "main"); q == nil || q.ID != queueID {
+						return fmt.Errorf("queue was replaced: %+v", q)
+					}
+					return nil
+				},
+			},
+		},
+	})
+}
+
+// A refresh with the organization token for a non-github.com host must not write. State is kept
+// (with a warning) so destroy can still use deleteQueue, which honors the request host.
+func TestMergeQueue_gheOrgTokenRefreshDoesNotWrite(t *testing.T) {
+	const ghe = "github.example.com/acme/widgets"
+	server := fakeapi.New(ghe)
+	defer server.Close()
+	config := providerBlock(server, fakeapi.V1Token) + `
+resource "trunk_merge_queue" "main" {
+  repo = {
+    host  = "github.example.com"
+    owner = "acme"
+    name  = "widgets"
+  }
+  target_branch = "main"
+  concurrency   = 6
+}
+`
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{Config: config},
+			{
+				PreConfig: server.ResetRequests,
+				Config:    config,
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+				Check: func(*terraform.State) error {
+					for _, r := range server.Requests() {
+						if r.Path == "/v1/updateQueue" {
+							return fmt.Errorf("refresh confirmed with a write: %s", r.Path)
+						}
+					}
+					return nil
+				},
 			},
 		},
 	})

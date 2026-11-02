@@ -289,13 +289,17 @@ func (c *Client) getV2ByID(ctx context.Context, id string, repo Repo) (*Queue, e
 }
 
 func (c *Client) getV2(ctx context.Context, ref QueueRef) (*Queue, error) {
+	// An ID names the queue Terraform manages. If it's gone, report not found — do not adopt a
+	// different queue now on the branch (Create also refuses to take one over). UpdateQueue looks
+	// up by branch itself when it needs to distinguish a replacement.
 	if ref.ID != "" {
-		q, err := c.getV2ByID(ctx, ref.ID, ref.Repo)
-		// A queue deleted and recreated outside Terraform has a new ID; find it by branch.
-		if !errors.Is(err, ErrNotFound) || ref.Repo.Name == "" {
-			return q, err
-		}
+		return c.getV2ByID(ctx, ref.ID, ref.Repo)
 	}
+	return c.getV2ByBranch(ctx, ref)
+}
+
+// getV2ByBranch finds the queue on ref's repository and branch, without using ref.ID.
+func (c *Client) getV2ByBranch(ctx context.Context, ref QueueRef) (*Queue, error) {
 	repoIDs, err := c.repositoryIDs(ctx, ref.Repo)
 	if errors.Is(err, ErrRepositoryNotFound) {
 		// A configuration written for v1 may differ in case from Trunk's repository name.
@@ -423,6 +427,8 @@ func (c *Client) setStateV2(ctx context.Context, id, state string) (*v2StateChan
 		return nil, fmt.Errorf("unsupported merge queue state %q", state)
 	}
 	var out v2StateChange
+	// pause/resume/drain are idempotent for a given target state, so retrying after a 5xx or a
+	// lost response is safe even though the v2 docs advise reconciling by reading first.
 	if err := c.do(ctx, http.MethodPost, "/v2/merge-queues/"+url.PathEscape(id)+"/"+action, nil, nil, &out, retrySafe); err != nil {
 		return nil, err
 	}
