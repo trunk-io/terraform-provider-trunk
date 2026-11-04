@@ -55,6 +55,7 @@ type v1UpdateRequest struct {
 	BatchingRules               *[]v1BatchingRule `json:"batchingRules,omitempty"`
 	CreatePrsForTestingBranches *bool             `json:"createPrsForTestingBranches,omitempty"`
 	MergeMethod                 *string           `json:"mergeMethod,omitempty"`
+	MergeMethodOverrideEnabled  *bool             `json:"mergeMethodOverrideEnabled,omitempty"`
 	CommentsEnabled             *bool             `json:"commentsEnabled,omitempty"`
 	CommandsEnabled             *bool             `json:"commandsEnabled,omitempty"`
 	StatusCheckEnabled          *bool             `json:"statusCheckEnabled,omitempty"`
@@ -86,6 +87,7 @@ type v1Queue struct {
 	BatchingRules               []v1BatchingRule `json:"batchingRules"`
 	CreatePrsForTestingBranches bool             `json:"createPrsForTestingBranches"`
 	MergeMethod                 string           `json:"mergeMethod"`
+	MergeMethodOverrideEnabled  bool             `json:"mergeMethodOverrideEnabled"`
 	CommentsEnabled             bool             `json:"commentsEnabled"`
 	CommandsEnabled             bool             `json:"commandsEnabled"`
 	StatusCheckEnabled          bool             `json:"statusCheckEnabled"`
@@ -125,6 +127,7 @@ func (w *v1Queue) toQueue(ref QueueRef) *Queue {
 		BatchingRules:               rules,
 		CreatePrsForTestingBranches: w.CreatePrsForTestingBranches,
 		MergeMethod:                 strings.ToLower(w.MergeMethod),
+		MergeMethodOverrideEnabled:  w.MergeMethodOverrideEnabled,
 		CommentsEnabled:             w.CommentsEnabled,
 		CommandsEnabled:             w.CommandsEnabled,
 		StatusCheckEnabled:          w.StatusCheckEnabled,
@@ -254,6 +257,7 @@ func v1UpdateFrom(ref QueueRef, mode, state *string, s Settings) v1UpdateRequest
 		BatchingMinSize:             s.BatchingMinSize,
 		CreatePrsForTestingBranches: s.CreatePrsForTestingBranches,
 		MergeMethod:                 s.MergeMethod,
+		MergeMethodOverrideEnabled:  s.MergeMethodOverrideEnabled,
 		CommentsEnabled:             s.CommentsEnabled,
 		CommandsEnabled:             s.CommandsEnabled,
 		StatusCheckEnabled:          s.StatusCheckEnabled,

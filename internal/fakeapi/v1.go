@@ -30,6 +30,7 @@ type v1Update struct {
 	BatchingRules               *[]BatchingRule `json:"batchingRules"`
 	CreatePrsForTestingBranches *bool           `json:"createPrsForTestingBranches"`
 	MergeMethod                 *string         `json:"mergeMethod"`
+	MergeMethodOverrideEnabled  *bool           `json:"mergeMethodOverrideEnabled"`
 	CommentsEnabled             *bool           `json:"commentsEnabled"`
 	CommandsEnabled             *bool           `json:"commandsEnabled"`
 	StatusCheckEnabled          *bool           `json:"statusCheckEnabled"`
@@ -53,7 +54,7 @@ func v1Body(q *Queue) map[string]any {
 		"canOptimisticallyMerge": q.CanOptimisticallyMerge, "batch": q.Batch,
 		"batchingMaxWaitTimeMinutes": q.BatchingMaxWaitTimeMinutes, "batchingMinSize": q.BatchingMinSize,
 		"batchingRules": q.BatchingRules, "createPrsForTestingBranches": q.CreatePrsForTestingBranches,
-		"mergeMethod": q.MergeMethod, "commentsEnabled": q.CommentsEnabled, "commandsEnabled": q.CommandsEnabled,
+		"mergeMethod": q.MergeMethod, "mergeMethodOverrideEnabled": q.MergeMethodOverrideEnabled, "commentsEnabled": q.CommentsEnabled, "commandsEnabled": q.CommandsEnabled,
 		"statusCheckEnabled": q.StatusCheckEnabled, "extensionEnabled": q.ExtensionEnabled,
 		"labelCommandsEnabled": q.LabelCommandsEnabled, "stateLabelsEnabled": q.StateLabelsEnabled,
 		"enqueueingLabel": q.EnqueueingLabel, "directMergeMode": q.DirectMergeMode,
@@ -177,6 +178,7 @@ func applyV1(q *Queue, u *v1Update) string {
 	}
 	setBool(&q.CreatePrsForTestingBranches, u.CreatePrsForTestingBranches)
 	setStr(&q.MergeMethod, u.MergeMethod)
+	setBool(&q.MergeMethodOverrideEnabled, u.MergeMethodOverrideEnabled)
 	setBool(&q.CommentsEnabled, u.CommentsEnabled)
 	setBool(&q.CommandsEnabled, u.CommandsEnabled)
 	setBool(&q.StatusCheckEnabled, u.StatusCheckEnabled)

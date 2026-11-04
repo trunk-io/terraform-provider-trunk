@@ -61,6 +61,7 @@ type Queue struct {
 	BatchingRules               []BatchingRule
 	CreatePrsForTestingBranches bool
 	MergeMethod                 string
+	MergeMethodOverrideEnabled  bool
 	CommentsEnabled             bool
 	CommandsEnabled             bool
 	StatusCheckEnabled          bool

@@ -147,7 +147,8 @@ func TestQueueLifecycle(t *testing.T) {
 			Repo: widgets, TargetBranch: "main", Mode: ptr(ModeParallel), State: ptr(StatePaused),
 			Settings: Settings{
 				Concurrency: ptr(8), BisectionConcurrency: ptr(2), EnqueueingLabel: ptr("go"),
-				MergeMethod: ptr("merge_commit"), OptimizationMode: ptr("bisection_skip_redundant_tests"),
+				MergeMethod: ptr("merge_commit"), MergeMethodOverrideEnabled: ptr(true),
+				OptimizationMode:           ptr("bisection_skip_redundant_tests"),
 				TestBranchConstructionMode: ptr("push_new_branch_from_temp"), NotReadyTimeoutHours: ptr(3),
 				RequiredStatuses: ptr([]string{"b", "a"}),
 				BatchingRules:    ptr([]BatchingRule{{TargetPattern: "//x:*", Policy: "isolate"}}),
@@ -158,7 +159,7 @@ func TestQueueLifecycle(t *testing.T) {
 		}
 		want := &Queue{
 			Repo: widgets, TargetBranch: "main", Mode: ModeParallel, State: StatePaused,
-			Concurrency: 8, BisectionConcurrency: 2, EnqueueingLabel: "go", MergeMethod: "merge_commit",
+			Concurrency: 8, BisectionConcurrency: 2, EnqueueingLabel: "go", MergeMethod: "merge_commit", MergeMethodOverrideEnabled: true,
 			OptimizationMode: "bisection_skip_redundant_tests", TestBranchConstructionMode: "push_new_branch_from_temp",
 			NotReadyTimeoutHours: 3, RequiredStatuses: []string{"a", "b"},
 			BatchingRules:              []BatchingRule{{TargetPattern: "//x:*", Policy: "isolate"}},
@@ -295,6 +296,80 @@ func TestV2_notReadyTimeoutInMinutes(t *testing.T) {
 	if sent != float64(120) {
 		t.Errorf("notReadyTimeoutMinutes = %v, want 120", sent)
 	}
+}
+
+// Neither create endpoint takes the setting, and an API without it must never see it unless set.
+func TestMergeMethodOverride_sentOnlyWhenSet(t *testing.T) {
+	eachAPI(t, func(t *testing.T, srv *fakeapi.Server, c *Client) {
+		ctx := context.Background()
+		key := map[APIVersion]string{V1: "mergeMethodOverrideEnabled", V2: "isMergeMethodOverrideEnabled"}[c.Version()]
+		q, err := c.CreateQueue(ctx, CreateParams{Repo: widgets, TargetBranch: "main", Settings: Settings{MergeMethod: ptr("rebase")}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ref := QueueRef{ID: q.ID, Repo: widgets, TargetBranch: "main"}
+		if _, err := c.UpdateQueue(ctx, UpdateParams{Ref: ref, Settings: Settings{Concurrency: ptr(3)}}); err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range srv.Requests() {
+			if _, ok := r.Body[key]; ok {
+				t.Errorf("%s %s sent %s without it being set", r.Method, r.Path, key)
+			}
+		}
+
+		srv.ResetRequests()
+		q, err = c.UpdateQueue(ctx, UpdateParams{Ref: ref, Settings: Settings{MergeMethodOverrideEnabled: ptr(true)}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !q.MergeMethodOverrideEnabled || !srv.Queue(repoPath, "main").MergeMethodOverrideEnabled {
+			t.Fatalf("after enabling: response %v, server %v", q.MergeMethodOverrideEnabled, srv.Queue(repoPath, "main").MergeMethodOverrideEnabled)
+		}
+		srv.ResetRequests()
+		// false is a value, not an omission.
+		q, err = c.UpdateQueue(ctx, UpdateParams{Ref: ref, Settings: Settings{MergeMethodOverrideEnabled: ptr(false)}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sent := false
+		for _, r := range srv.Requests() {
+			if v, ok := r.Body[key]; ok {
+				sent = v == false
+			}
+		}
+		if !sent || q.MergeMethodOverrideEnabled {
+			t.Fatalf("disabling: sent %s=false %v, response %v", key, sent, q.MergeMethodOverrideEnabled)
+		}
+	})
+}
+
+// A create with the setting sends it in the follow-up write, not the create.
+func TestCreate_mergeMethodOverrideInSecondWrite(t *testing.T) {
+	eachAPI(t, func(t *testing.T, srv *fakeapi.Server, c *Client) {
+		key := map[APIVersion]string{V1: "mergeMethodOverrideEnabled", V2: "isMergeMethodOverrideEnabled"}[c.Version()]
+		createPath := map[APIVersion]string{V1: "/v1/createQueue", V2: "/v2/merge-queues"}[c.Version()]
+		q, err := c.CreateQueue(context.Background(), CreateParams{Repo: widgets, TargetBranch: "main",
+			Settings: Settings{MergeMethodOverrideEnabled: ptr(true)}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !q.MergeMethodOverrideEnabled {
+			t.Fatalf("created queue has the setting off")
+		}
+		var inCreate, inUpdate bool
+		for _, r := range srv.Requests() {
+			_, ok := r.Body[key]
+			switch {
+			case r.Method == http.MethodPost && r.Path == createPath:
+				inCreate = inCreate || ok
+			case r.Path == "/v1/updateQueue" || r.Method == http.MethodPatch:
+				inUpdate = inUpdate || ok
+			}
+		}
+		if inCreate || !inUpdate {
+			t.Errorf("%s in create %v, in follow-up write %v; want false, true", key, inCreate, inUpdate)
+		}
+	})
 }
 
 func TestV2_getByIDFindsRepo(t *testing.T) {

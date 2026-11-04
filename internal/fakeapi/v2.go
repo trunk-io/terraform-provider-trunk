@@ -52,8 +52,9 @@ func (s *Server) v2Body(q *Queue) map[string]any {
 			"areLabelCommandsEnabled": q.LabelCommandsEnabled, "areStateLabelsEnabled": q.StateLabelsEnabled,
 			"requiredStatuses": q.RequiredStatuses, "allowedBotSubmitters": []string{}, "batchingRules": q.BatchingRules,
 			"directMergeMode": q.DirectMergeMode, "optimizationMode": camel(q.OptimizationMode),
-			"mergeMethod": camel(q.MergeMethod), "testBranchConstructionMode": camel(q.TestBranchConstructionMode),
-			"enqueueingLabel": q.EnqueueingLabel,
+			"mergeMethod": camel(q.MergeMethod), "isMergeMethodOverrideEnabled": q.MergeMethodOverrideEnabled,
+			"testBranchConstructionMode": camel(q.TestBranchConstructionMode),
+			"enqueueingLabel":            q.EnqueueingLabel,
 		},
 	}
 }
@@ -81,6 +82,7 @@ type v2Config struct {
 	DirectMergeMode              *string         `json:"directMergeMode"`
 	OptimizationMode             *string         `json:"optimizationMode"`
 	MergeMethod                  *string         `json:"mergeMethod"`
+	IsMergeMethodOverrideEnabled *bool           `json:"isMergeMethodOverrideEnabled"`
 	TestBranchConstructionMode   *string         `json:"testBranchConstructionMode"`
 	EnqueueingLabel              *string         `json:"enqueueingLabel"`
 }
@@ -142,6 +144,7 @@ func applyV2(q *Queue, c *v2Config) string {
 	setStr(&q.DirectMergeMode, c.DirectMergeMode)
 	setStr(&q.OptimizationMode, snakePtr(c.OptimizationMode))
 	setStr(&q.MergeMethod, snakePtr(c.MergeMethod))
+	setBool(&q.MergeMethodOverrideEnabled, c.IsMergeMethodOverrideEnabled)
 	setStr(&q.TestBranchConstructionMode, snakePtr(c.TestBranchConstructionMode))
 	setStr(&q.EnqueueingLabel, c.EnqueueingLabel)
 	return ""
