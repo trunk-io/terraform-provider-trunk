@@ -51,6 +51,7 @@ type mergeQueueResourceModel struct {
 	BatchingRules               types.Set    `tfsdk:"batching_rules"`
 	CreatePrsForTestingBranches types.Bool   `tfsdk:"create_prs_for_testing_branches"`
 	MergeMethod                 types.String `tfsdk:"merge_method"`
+	MergeMethodOverrideEnabled  types.Bool   `tfsdk:"merge_method_override_enabled"`
 	CommentsEnabled             types.Bool   `tfsdk:"comments_enabled"`
 	CommandsEnabled             types.Bool   `tfsdk:"commands_enabled"`
 	StatusCheckEnabled          types.Bool   `tfsdk:"status_check_enabled"`
@@ -125,6 +126,7 @@ func (m *mergeQueueResourceModel) settings(ctx context.Context, config *mergeQue
 		BatchingMinSize:             intIfSet(config.BatchingMinSize, m.BatchingMinSize),
 		CreatePrsForTestingBranches: boolIfSet(config.CreatePrsForTestingBranches, m.CreatePrsForTestingBranches),
 		MergeMethod:                 strIfSet(config.MergeMethod, m.MergeMethod),
+		MergeMethodOverrideEnabled:  boolIfSet(config.MergeMethodOverrideEnabled, m.MergeMethodOverrideEnabled),
 		CommentsEnabled:             boolIfSet(config.CommentsEnabled, m.CommentsEnabled),
 		CommandsEnabled:             boolIfSet(config.CommandsEnabled, m.CommandsEnabled),
 		StatusCheckEnabled:          boolIfSet(config.StatusCheckEnabled, m.StatusCheckEnabled),
@@ -227,6 +229,7 @@ func (m *mergeQueueResourceModel) fromQueue(q *client.Queue, expected *mergeQueu
 	m.BatchingMinSize = types.Int64Value(int64(q.BatchingMinSize))
 	m.CreatePrsForTestingBranches = types.BoolValue(q.CreatePrsForTestingBranches)
 	m.MergeMethod = types.StringValue(q.MergeMethod)
+	m.MergeMethodOverrideEnabled = types.BoolValue(q.MergeMethodOverrideEnabled)
 	m.CommentsEnabled = types.BoolValue(q.CommentsEnabled)
 	m.CommandsEnabled = types.BoolValue(q.CommandsEnabled)
 	m.StatusCheckEnabled = types.BoolValue(q.StatusCheckEnabled)

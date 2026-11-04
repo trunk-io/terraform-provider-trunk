@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- `trunk_merge_queue`: `merge_method_override_enabled`, which lets whoever submits a pull request choose its merge method. `merge_method` is then the default for pull requests that don't choose one.
+
 ## [2.0.1]
 
 ### Fixed

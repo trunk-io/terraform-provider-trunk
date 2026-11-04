@@ -100,6 +100,7 @@ type Queue struct {
 	BatchingRules               []BatchingRule
 	CreatePrsForTestingBranches bool
 	MergeMethod                 string
+	MergeMethodOverrideEnabled  bool
 	CommentsEnabled             bool
 	CommandsEnabled             bool
 	StatusCheckEnabled          bool
@@ -128,6 +129,7 @@ type Settings struct {
 	BatchingMinSize             *int
 	CreatePrsForTestingBranches *bool
 	MergeMethod                 *string
+	MergeMethodOverrideEnabled  *bool
 	CommentsEnabled             *bool
 	CommandsEnabled             *bool
 	StatusCheckEnabled          *bool

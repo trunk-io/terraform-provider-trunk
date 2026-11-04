@@ -83,7 +83,8 @@ A queue that still has pull requests can't be deleted. Set `state = "draining"`,
 - `enqueueing_label` (String) The GitHub label that enqueues a pull request when `label_commands_enabled` is true.
 - `extension_enabled` (Boolean) Show the Trunk browser extension's merge queue controls on pull requests into this branch.
 - `label_commands_enabled` (Boolean) Let a GitHub label enqueue a pull request, and removing it dequeue it (see `enqueueing_label`).
-- `merge_method` (String) How pull requests are merged: `merge_commit`, `squash`, or `rebase`.
+- `merge_method` (String) How pull requests are merged: `merge_commit`, `squash`, or `rebase` (**Default merge method** in the app). With `merge_method_override_enabled`, it applies to pull requests that don't choose their own.
+- `merge_method_override_enabled` (Boolean) Let whoever submits a pull request choose its merge method (**Allow choosing a merge method per pull request** in the app). When false, every pull request merges with `merge_method`.
 - `mode` (String) `single` tests pull requests in one line, each with the changes ahead of it. `parallel` splits the queue into independent lines by impacted targets, which CI must upload. Changing it on an existing queue starts a mode switch.
 - `not_ready_timeout_hours` (Number) Hours a submitted pull request may stay unable to enter the queue before it is cancelled (**Stale PR Timeout** in the app). `0` means no timeout.
 - `optimization_mode` (String) `bisection_skip_redundant_tests` (**Skip Redundant Bisection Tests** in the app): while bisecting a failed batch, skip any set of pull requests that already failed in the same bisection. `off` tests every set.
