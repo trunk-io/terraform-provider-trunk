@@ -193,8 +193,12 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			},
 			"create_prs_for_testing_branches": optionalBool(
 				"Create a draft pull request for each test branch, so pull-request CI runs on it. When false, CI must run on pushes to `trunk-merge/` branches."),
-			"merge_method": optionalString("How pull requests are merged: `merge_commit`, `squash`, or `rebase`.",
+			"merge_method": optionalString("How pull requests are merged: `merge_commit`, `squash`, or `rebase` (**Default merge method** in the app). "+
+				"With `merge_method_override_enabled`, it applies to pull requests that don't choose their own.",
 				stringvalidator.OneOf("merge_commit", "squash", "rebase")),
+			"merge_method_override_enabled": optionalBool(
+				"Let whoever submits a pull request choose its merge method (**Allow choosing a merge method per pull request** in the app). " +
+					"When false, every pull request merges with `merge_method`."),
 			"comments_enabled":       optionalBool("Post comments on pull requests about their progress through the queue."),
 			"commands_enabled":       optionalBool("Accept `/trunk` commands in pull request comments."),
 			"status_check_enabled":   optionalBool("Post a GitHub check on queued pull requests."),

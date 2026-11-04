@@ -40,6 +40,7 @@ type v2Config struct {
 	DirectMergeMode              *string           `json:"directMergeMode,omitempty"`
 	OptimizationMode             *string           `json:"optimizationMode,omitempty"`
 	MergeMethod                  *string           `json:"mergeMethod,omitempty"`
+	IsMergeMethodOverrideEnabled *bool             `json:"isMergeMethodOverrideEnabled,omitempty"`
 	TestBranchConstructionMode   *string           `json:"testBranchConstructionMode,omitempty"`
 	EnqueueingLabel              *string           `json:"enqueueingLabel,omitempty"`
 }
@@ -86,6 +87,7 @@ type v2Queue struct {
 		DirectMergeMode              string           `json:"directMergeMode"`
 		OptimizationMode             string           `json:"optimizationMode"`
 		MergeMethod                  string           `json:"mergeMethod"`
+		IsMergeMethodOverrideEnabled bool             `json:"isMergeMethodOverrideEnabled"`
 		TestBranchConstructionMode   string           `json:"testBranchConstructionMode"`
 		EnqueueingLabel              string           `json:"enqueueingLabel"`
 	} `json:"config"`
@@ -187,6 +189,7 @@ func (w *v2Queue) toQueue(repo Repo) *Queue {
 		BatchingRules:               rules,
 		CreatePrsForTestingBranches: cfg.CreatesPrsForTestingBranches,
 		MergeMethod:                 toSnake(cfg.MergeMethod),
+		MergeMethodOverrideEnabled:  cfg.IsMergeMethodOverrideEnabled,
 		CommentsEnabled:             cfg.AreCommentsEnabled,
 		CommandsEnabled:             cfg.AreCommandsEnabled,
 		StatusCheckEnabled:          cfg.IsStatusCheckEnabled,
@@ -231,12 +234,13 @@ func v2ConfigFrom(s Settings) v2Config {
 		AreLabelCommandsEnabled:      s.LabelCommandsEnabled,
 		AreStateLabelsEnabled:        s.StateLabelsEnabled,
 		// v2 reads an empty list as "remove the override", which is what Settings means by it.
-		RequiredStatuses:           s.RequiredStatuses,
-		DirectMergeMode:            camelPtr(s.DirectMergeMode),
-		OptimizationMode:           camelPtr(s.OptimizationMode),
-		MergeMethod:                camelPtr(s.MergeMethod),
-		TestBranchConstructionMode: camelPtr(s.TestBranchConstructionMode),
-		EnqueueingLabel:            s.EnqueueingLabel,
+		RequiredStatuses:             s.RequiredStatuses,
+		DirectMergeMode:              camelPtr(s.DirectMergeMode),
+		OptimizationMode:             camelPtr(s.OptimizationMode),
+		MergeMethod:                  camelPtr(s.MergeMethod),
+		IsMergeMethodOverrideEnabled: s.MergeMethodOverrideEnabled,
+		TestBranchConstructionMode:   camelPtr(s.TestBranchConstructionMode),
+		EnqueueingLabel:              s.EnqueueingLabel,
 	}
 	if s.BatchingRules != nil {
 		rules := make([]v2BatchingRule, 0, len(*s.BatchingRules))

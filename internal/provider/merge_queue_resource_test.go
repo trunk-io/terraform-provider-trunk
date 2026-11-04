@@ -84,6 +84,7 @@ func TestMergeQueue_lifecycle(t *testing.T) {
   batching_max_wait_time_minutes = 10
   batching_min_size             = 4
   merge_method                  = "merge_commit"
+  merge_method_override_enabled = true
   comments_enabled              = false
   commands_enabled              = false
   status_check_enabled          = false
@@ -106,6 +107,7 @@ func TestMergeQueue_lifecycle(t *testing.T) {
 						resource.TestCheckResourceAttr("trunk_merge_queue.main", "state", "running"),
 						resource.TestCheckResourceAttr("trunk_merge_queue.main", "concurrency", "10"),
 						resource.TestCheckResourceAttr("trunk_merge_queue.main", "merge_method", "merge_commit"),
+						resource.TestCheckResourceAttr("trunk_merge_queue.main", "merge_method_override_enabled", "true"),
 						resource.TestCheckResourceAttr("trunk_merge_queue.main", "optimization_mode", "bisection_skip_redundant_tests"),
 						resource.TestCheckResourceAttr("trunk_merge_queue.main", "test_branch_construction_mode", "push_new_branch_from_temp"),
 						resource.TestCheckResourceAttr("trunk_merge_queue.main", "not_ready_timeout_hours", "48"),
@@ -114,7 +116,7 @@ func TestMergeQueue_lifecycle(t *testing.T) {
 						resource.TestCheckResourceAttr("trunk_merge_queue.main", "batching_rules.0.target_pattern", "//db/migrations:*"),
 						func(_ *terraform.State) error {
 							q := server.Queue(repo, "main")
-							if q.Mode != "parallel" || q.EnqueueingLabel != "ship-it" || q.NotReadyTimeoutHours != 48 ||
+							if q.Mode != "parallel" || q.EnqueueingLabel != "ship-it" || q.NotReadyTimeoutHours != 48 || !q.MergeMethodOverrideEnabled ||
 								fmt.Sprint(q.RequiredStatuses) != "[build test]" || q.ManagedState != "terraform" {
 								return fmt.Errorf("server queue = %+v", q)
 							}
@@ -227,6 +229,85 @@ func TestMergeQueue_drift(t *testing.T) {
 					Check: resource.ComposeAggregateTestCheckFunc(
 						resource.TestCheckResourceAttr("trunk_merge_queue.main", "merge_method", "rebase"),
 						checkV2Attrs(cred),
+					),
+				},
+			},
+		})
+	})
+}
+
+// Left out, merge_method_override_enabled is read back but never sent, so an API that predates it
+// sees the same requests as before. Set, it updates, imports and corrects drift.
+func TestMergeQueue_mergeMethodOverrideEnabled(t *testing.T) {
+	eachCredential(t, func(t *testing.T, server *fakeapi.Server, cred credential) {
+		p := providerBlock(server, cred.key)
+		key := map[string]string{"v1": "mergeMethodOverrideEnabled", "v2": "isMergeMethodOverrideEnabled"}[cred.name]
+		notSent := func(_ *terraform.State) error {
+			for _, r := range server.Requests() {
+				if _, ok := r.Body[key]; ok {
+					return fmt.Errorf("%s %s sent %s", r.Method, r.Path, key)
+				}
+			}
+			return nil
+		}
+		enabled := p + queueConfig(`merge_method_override_enabled = true`)
+		resource.UnitTest(t, resource.TestCase{
+			ProtoV6ProviderFactories: factories,
+			Steps: []resource.TestStep{
+				{
+					Config: p + queueConfig(`merge_method = "rebase"`),
+					Check: resource.ComposeAggregateTestCheckFunc(
+						resource.TestCheckResourceAttr("trunk_merge_queue.main", "merge_method_override_enabled", "false"),
+						notSent,
+					),
+				},
+				{
+					Config: p + queueConfig(`concurrency = 3`),
+					Check:  notSent,
+				},
+				{
+					Config: enabled,
+					Check: resource.ComposeAggregateTestCheckFunc(
+						resource.TestCheckResourceAttr("trunk_merge_queue.main", "merge_method_override_enabled", "true"),
+						func(_ *terraform.State) error {
+							if !server.Queue(repo, "main").MergeMethodOverrideEnabled {
+								return fmt.Errorf("server queue has the setting off")
+							}
+							return nil
+						},
+					),
+				},
+				{
+					PreConfig: func() {
+						server.Edit(repo, "main", func(q *fakeapi.Queue) { q.MergeMethodOverrideEnabled = false })
+					},
+					Config: enabled,
+					ConfigPlanChecks: resource.ConfigPlanChecks{
+						PreApply: []plancheck.PlanCheck{
+							plancheck.ExpectResourceAction("trunk_merge_queue.main", plancheck.ResourceActionUpdate),
+						},
+					},
+					Check: resource.ComposeAggregateTestCheckFunc(
+						resource.TestCheckResourceAttr("trunk_merge_queue.main", "merge_method_override_enabled", "true"),
+						checkV2Attrs(cred),
+					),
+				},
+				{
+					ResourceName:      "trunk_merge_queue.main",
+					ImportState:       true,
+					ImportStateId:     repo + "/main",
+					ImportStateVerify: true,
+				},
+				{
+					Config: p + queueConfig(`merge_method_override_enabled = false`),
+					Check: resource.ComposeAggregateTestCheckFunc(
+						resource.TestCheckResourceAttr("trunk_merge_queue.main", "merge_method_override_enabled", "false"),
+						func(_ *terraform.State) error {
+							if server.Queue(repo, "main").MergeMethodOverrideEnabled {
+								return fmt.Errorf("server queue still has the setting on")
+							}
+							return nil
+						},
 					),
 				},
 			},
