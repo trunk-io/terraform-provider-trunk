@@ -1,0 +1,83 @@
+name: Bug Report
+description: Report a bug with the Trunk Terraform provider
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug! Please fill out the information below to help us investigate.
+
+  - type: input
+    id: terraform-version
+    attributes:
+      label: Terraform Version
+      description: Output of `terraform version`
+      placeholder: 1.9.0
+    validations:
+      required: true
+
+  - type: input
+    id: provider-version
+    attributes:
+      label: Provider Version
+      description: Version of the trunk provider
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: resource
+    attributes:
+      label: Affected Resource(s)
+      description: Which Terraform resource(s) are affected?
+      placeholder: trunk_merge_queue
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Terraform Configuration
+      description: Relevant Terraform configuration (redact any sensitive values)
+      render: hcl
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      value: |
+        1. `terraform apply`
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Debug Output
+      description: |
+        If applicable, provide debug output by running `TF_LOG=DEBUG terraform apply`.
+        Redact any sensitive information.
+      render: text
+    validations:
+      required: false
