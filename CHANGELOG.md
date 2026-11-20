@@ -6,9 +6,20 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- Import by `{host}/{owner}/{name}:{target_branch}`, for a GitLab project in a subgroup, whose `owner` has slashes (`gitlab.com/my-group/my-subgroup/my-project:main`). Such a queue's `id` takes the same form, so `id` always works as an import ID.
+- Importing a subgroup project with the `/` form, which splits the owner wrongly, now says to use the `:` form.
+
+### Fixed
+
+- Importing a GitLab subgroup project by v2 queue ID recorded the subgroup as part of the name (`owner = "my-group"`, `name = "my-subgroup/my-project"`), so the next plan replaced the queue.
+
+## [2.1.0] - 2026-11-04
+
+### Added
+
 - `trunk_merge_queue`: `merge_method_override_enabled`, which lets whoever submits a pull request choose its merge method. `merge_method` is then the default for pull requests that don't choose one.
 
-## [2.0.1]
+## [2.0.1] - 2026-11-02
 
 ### Fixed
 
@@ -66,7 +77,8 @@ Change the version constraint to `~> 2.0` and run `terraform init -upgrade`. Exi
 
 - First releases (0.1.0–0.1.3): the `trunk_merge_queue` resource, with create, read, update, delete and import, through the v1 API with the organization API token.
 
-[Unreleased]: https://github.com/trunk-io/terraform-provider-trunk/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/trunk-io/terraform-provider-trunk/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/trunk-io/terraform-provider-trunk/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/trunk-io/terraform-provider-trunk/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/trunk-io/terraform-provider-trunk/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/trunk-io/terraform-provider-trunk/compare/v1.0.4...v1.1.0
