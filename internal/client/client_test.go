@@ -390,6 +390,25 @@ func TestV2_getByIDFindsRepo(t *testing.T) {
 	}
 }
 
+func TestV2_getByIDSplitsSubgroupOwner(t *testing.T) {
+	subproject := Repo{Host: "gitlab.com", Owner: "trunk-io/test-subgroup", Name: "test-subproject"}
+	srv := fakeapi.New("gitlab.com/trunk-io/test-subgroup/test-subproject")
+	defer srv.Close()
+	c := testClient(fakeapi.V2Key, srv.URL)
+	ctx := context.Background()
+	created, err := c.CreateQueue(ctx, CreateParams{Repo: subproject, TargetBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, err := c.GetQueue(ctx, QueueRef{ID: created.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q.Repo != subproject {
+		t.Errorf("repo %+v, want %+v", q.Repo, subproject)
+	}
+}
+
 func TestV2_unknownRepository(t *testing.T) {
 	srv := fakeapi.New()
 	defer srv.Close()

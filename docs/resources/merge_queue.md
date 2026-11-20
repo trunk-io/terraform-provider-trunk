@@ -43,6 +43,22 @@ resource "trunk_merge_queue" "main" {
 }
 ```
 
+## GitLab
+
+For a project on gitlab.com, set `host = "gitlab.com"`. For a project in a subgroup, `owner` is the full group path and `name` the project: `gitlab.com/my-group/my-subgroup/my-project` is
+
+```terraform
+repo = {
+  host  = "gitlab.com"
+  owner = "my-group/my-subgroup"
+  name  = "my-project"
+}
+```
+
+Use an API key. With the organization API token, Terraform can't refresh a queue outside github.com. Self-managed GitLab isn't supported yet.
+
+To import a subgroup project by path, use the `:` form described under [Import](#import).
+
 ## Changing settings outside Terraform
 
 A change made in the Trunk app or through the API to a setting in your configuration shows up in the next plan, and apply reverts it. A change to a setting you left out is kept. With an API key, `managed_state` reads `terraform_with_drift` after either, until the next apply that changes the queue.
@@ -98,7 +114,7 @@ A queue that still has pull requests can't be deleted. Set `state = "draining"`,
 
 ### Read-Only
 
-- `id` (String) The queue's address, `{host}/{owner}/{name}/{target_branch}`.
+- `id` (String) The queue's address, `{host}/{owner}/{name}/{target_branch}`. When `owner` has slashes (a GitLab subgroup), import by `{host}/{owner}/{name}:{target_branch}` instead.
 - `managed_state` (String) Whether the queue is managed by Terraform: `manual`, `terraform`, or `terraform_with_drift` (changed outside Terraform since the last apply). Only the v2 API reports it; null with an organization API token.
 - `queue_id` (String) The queue's v2 ID. Null with an organization API token.
 
@@ -107,9 +123,9 @@ A queue that still has pull requests can't be deleted. Set `state = "draining"`,
 
 Required:
 
-- `host` (String) Repository host, such as `github.com`.
+- `host` (String) Repository host, such as `github.com` or `gitlab.com`.
 - `name` (String) Repository name.
-- `owner` (String) Repository owner (organization or user).
+- `owner` (String) Repository owner (organization or user). For a GitLab project in a subgroup, the full group path, such as `my-group/my-subgroup`.
 
 
 <a id="nestedatt--batching_rules"></a>
@@ -126,8 +142,13 @@ Required:
 # By repository and target branch. Branch names may contain slashes.
 terraform import trunk_merge_queue.main github.com/my-org/my-repo/main
 
+# For a GitLab project in a subgroup, put a colon before the branch.
+terraform import trunk_merge_queue.main gitlab.com/my-group/my-subgroup/my-project:main
+
 # Or, with an API key, by the queue's v2 ID.
 terraform import trunk_merge_queue.main a3e06cc2-798d-4907-a021-7966dd00b555
 ```
+
+A path is `{host}/{owner}/{name}/{target_branch}` or `{host}/{owner}/{name}:{target_branch}`. In the `/` form, everything after the third slash is the branch, so a branch may contain slashes (`release/1.0`) but the owner can't. A GitLab subgroup project's owner has slashes, so import it with the `:` form, which splits the path at the `:` (branch names can't contain one): `gitlab.com/my-group/my-subgroup/my-project:main`. The `:` form works for any repository.
 
 The ID is the part after `merge-queue/` in the queue's URL in the Trunk app (`app.trunk.io/<org>/merge-queue/<id>/queue`), and its `id` in the v2 API. Importing by ID records the repository as Trunk spells it. If your configuration's `repo` differs only in capitals, the next apply updates state to your spelling in place (v2 still addresses the same repository). If it differs by more than case, import by path instead.
