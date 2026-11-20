@@ -408,6 +408,87 @@ func TestMergeQueue_importByQueueID(t *testing.T) {
 	})
 }
 
+// A GitLab subgroup project's owner has a slash, so the slash-only import ID can't name it.
+func TestMergeQueue_gitlabSubgroup(t *testing.T) {
+	const subproject = "gitlab.com/trunk-io/test-subgroup/test-subproject"
+	server := fakeapi.New(subproject)
+	defer server.Close()
+	p := providerBlock(server, fakeapi.V2Key)
+	config := func(name string) string {
+		return fmt.Sprintf(`
+resource "trunk_merge_queue" %q {
+  repo = {
+    host  = "gitlab.com"
+    owner = "trunk-io/test-subgroup"
+    name  = "test-subproject"
+  }
+  target_branch = "main"
+  concurrency   = 7
+}
+`, name)
+	}
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: p + config("main"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("trunk_merge_queue.main", "id", subproject+"/main"),
+					func(_ *terraform.State) error {
+						if q := server.Queue(subproject, "main"); q == nil || q.Owner != "trunk-io/test-subgroup" || q.Concurrency != 7 {
+							return fmt.Errorf("server queue = %+v", q)
+						}
+						return nil
+					},
+				),
+			},
+			{Config: p + config("main"), PlanOnly: true},
+			{
+				ResourceName:      "trunk_merge_queue.main",
+				ImportState:       true,
+				ImportStateId:     subproject + ":main",
+				ImportStateVerify: true,
+			},
+			{
+				ResourceName:      "trunk_merge_queue.main",
+				ImportState:       true,
+				ImportStateIdFunc: func(*terraform.State) (string, error) { return server.Queue(subproject, "main").ID, nil },
+				ImportStateVerify: true,
+			},
+			// A second resource on the branch is told to import by the `:` form.
+			{
+				Config:      p + config("main") + config("dup"),
+				ExpectError: regexp.MustCompile(`terraform import <resource address> "` + subproject + `:main"`),
+			},
+		},
+	})
+}
+
+func TestParseImportID(t *testing.T) {
+	for _, tc := range []struct {
+		id                        string
+		host, owner, name, branch string
+		ok                        bool
+	}{
+		{"github.com/acme/widgets/main", "github.com", "acme", "widgets", "main", true},
+		{"github.com/acme/widgets/release/1.0", "github.com", "acme", "widgets", "release/1.0", true},
+		{"gitlab.com/acme/platform/widgets:main", "gitlab.com", "acme/platform", "widgets", "main", true},
+		{"gitlab.com/acme/widgets:release/1.0", "gitlab.com", "acme", "widgets", "release/1.0", true},
+		{"ghe.acme.com:8443/acme/widgets/main", "ghe.acme.com:8443", "acme", "widgets", "main", true},
+		{"ghe.acme.com:8443/acme/platform/widgets:main", "ghe.acme.com:8443", "acme/platform", "widgets", "main", true},
+		{"github.com/acme/widgets", "", "", "", "", false},
+		{"gitlab.com/widgets:main", "gitlab.com", "", "widgets", "main", false},
+		{"gitlab.com/acme//widgets:main", "gitlab.com", "acme/", "widgets", "main", false},
+		{"gitlab.com/acme/widgets:", "gitlab.com", "acme", "widgets", "", false},
+	} {
+		host, owner, name, branch, ok := parseImportID(tc.id)
+		if host != tc.host || owner != tc.owner || name != tc.name || branch != tc.branch || ok != tc.ok {
+			t.Errorf("parseImportID(%q) = %q, %q, %q, %q, %v; want %q, %q, %q, %q, %v",
+				tc.id, host, owner, name, branch, ok, tc.host, tc.owner, tc.name, tc.branch, tc.ok)
+		}
+	}
+}
+
 func TestMergeQueue_validation(t *testing.T) {
 	server := fakeapi.New(repo)
 	defer server.Close()
