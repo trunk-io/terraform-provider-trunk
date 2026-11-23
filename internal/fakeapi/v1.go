@@ -108,8 +108,7 @@ func (s *Server) serveV1(w http.ResponseWriter, r *http.Request, raw json.RawMes
 			return
 		}
 		s.nextID++
-		rp := strings.SplitN(repo, "/", 3)
-		q = newQueue(fmt.Sprintf("mq-%d", s.nextID), rp[0], rp[1], rp[2], req.TargetBranch)
+		q = newRepoQueue(fmt.Sprintf("mq-%d", s.nextID), repo, req.TargetBranch)
 		if req.Mode != nil {
 			q.Mode = *req.Mode
 		}

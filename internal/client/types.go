@@ -63,6 +63,13 @@ type Repo struct {
 	Name  string
 }
 
+// URL is the repository's provider URL, as v2 takes it in `providerUrl` and returns it in
+// `repositoryUrl`; repoFromURL reads it back. A host whose URLs have another shape (Azure
+// DevOps' `_git`) needs both changed.
+func (r Repo) URL() string {
+	return fmt.Sprintf("https://%s/%s/%s", r.Host, r.Owner, r.Name)
+}
+
 // QueueRef identifies a merge queue. v1 uses Repo and TargetBranch; v2 uses ID when set and
 // otherwise looks the queue up from Repo and TargetBranch.
 type QueueRef struct {

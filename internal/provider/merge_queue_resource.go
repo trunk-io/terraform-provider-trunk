@@ -117,7 +117,7 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 		Description: "Manages a Trunk merge queue: one per repository and target branch.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				Description:   "The queue's address, `{host}/{owner}/{name}/{target_branch}`.",
+				Description:   "The queue's address, which also works as its import ID: `{host}/{owner}/{name}/{target_branch}`, or `{host}/{owner}/{name}:{target_branch}` when `owner` has slashes (a GitLab subgroup).",
 				Computed:      true,
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseNonNullStateForUnknown()},
 			},
@@ -135,8 +135,8 @@ func (r *mergeQueueResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Description: "The repository the queue belongs to. Changing it replaces the queue. A change that only differs in letter case updates state in place (v2 matches names exactly; import-by-ID keeps Trunk's spelling until the next apply).",
 				Required:    true,
 				Attributes: map[string]schema.Attribute{
-					"host":  repoIdentity("Repository host, such as `github.com`."),
-					"owner": repoIdentity("Repository owner (organization or user)."),
+					"host":  repoIdentity("Repository host, such as `github.com` or `gitlab.com`."),
+					"owner": repoIdentity("Repository owner (organization or user). For a GitLab project in a subgroup, the full group path, such as `my-group/my-subgroup`."),
 					"name":  repoIdentity("Repository name."),
 				},
 			},
@@ -319,9 +319,33 @@ func describe(m *mergeQueueResourceModel) string {
 	return fmt.Sprintf("%s/%s/%s branch %q", repo.Host, repo.Owner, repo.Name, m.TargetBranch.ValueString())
 }
 
+// addressOf is a queue's `id`, which is also an import ID. An owner with a slash (a
+// GitLab subgroup) makes the `/` form ambiguous, so it takes the `:{target_branch}` form.
+func addressOf(repo client.Repo, branch string) string {
+	path := repo.Host + "/" + repo.Owner + "/" + repo.Name
+	if strings.Contains(repo.Owner, "/") {
+		return path + ":" + branch
+	}
+	return path + "/" + branch
+}
+
 func importID(m *mergeQueueResourceModel) string {
-	repo := m.repo()
-	return repo.Host + "/" + repo.Owner + "/" + repo.Name + "/" + m.TargetBranch.ValueString()
+	return addressOf(m.repo(), m.TargetBranch.ValueString())
+}
+
+// repositoryNotFoundHint advises on a read that found no repository. Only an import leaves
+// `concurrency` null, and there dropping state is the wrong advice. A `/` import ID splits
+// an owner with slashes wrongly, which shows up as a branch with a slash in it.
+func repositoryNotFoundHint(m *mergeQueueResourceModel) string {
+	var hint string
+	if strings.Contains(m.TargetBranch.ValueString(), "/") && !strings.Contains(m.repo().Owner, "/") {
+		hint = "\n\nIf the owner has slashes (a GitLab subgroup), import by `{host}/{owner}/{name}:{target_branch}`," +
+			" such as gitlab.com/my-group/my-subgroup/my-project:main."
+	}
+	if !m.Concurrency.IsNull() {
+		hint += "\n\nIf the repository was removed from Trunk, drop this resource from state with:\n\n  terraform state rm <resource address>"
+	}
+	return hint
 }
 
 func (r *mergeQueueResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -391,7 +415,7 @@ func (r *mergeQueueResource) Read(ctx context.Context, req resource.ReadRequest,
 	if err != nil {
 		msg := fmt.Sprintf("Could not read the merge queue for %s: %s", describe(&state), err)
 		if errors.Is(err, client.ErrRepositoryNotFound) {
-			msg += "\n\nIf the repository was removed from Trunk, drop this resource from state with:\n\n  terraform state rm <resource address>"
+			msg += repositoryNotFoundHint(&state)
 		}
 		resp.Diagnostics.AddError("Error reading merge queue", msg)
 		return
@@ -461,7 +485,8 @@ func (r *mergeQueueResource) Delete(ctx context.Context, req resource.DeleteRequ
 	}
 }
 
-// ImportState accepts `{host}/{owner}/{name}/{target_branch}`, or a v2 queue ID with an API key.
+// ImportState accepts `{host}/{owner}/{name}/{target_branch}`, `{host}/{owner}/{name}:{target_branch}`
+// (needed when the owner has slashes, as a GitLab subgroup does), or a v2 queue ID with an API key.
 func (r *mergeQueueResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	id := strings.TrimSpace(req.ID)
 	if !strings.Contains(id, "/") {
@@ -474,18 +499,41 @@ func (r *mergeQueueResource) ImportState(ctx context.Context, req resource.Impor
 		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("queue_id"), id)...)
 		return
 	}
-	// SplitN keeps slashes in branch names, such as release/1.0.
-	parts := strings.SplitN(id, "/", 4)
-	if len(parts) != 4 || parts[0] == "" || parts[1] == "" || parts[2] == "" || parts[3] == "" {
+	host, owner, name, branch, ok := parseImportID(id)
+	if !ok {
 		resp.Diagnostics.AddError("Invalid import ID",
-			fmt.Sprintf("Expected {host}/{owner}/{name}/{target_branch}, or a v2 queue ID; got %q.", id))
+			fmt.Sprintf("Expected {host}/{owner}/{name}/{target_branch}, {host}/{owner}/{name}:{target_branch} "+
+				"(for an owner with slashes, such as a GitLab subgroup), or a v2 queue ID; got %q.", id))
 		return
 	}
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), id)...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"),
+		addressOf(client.Repo{Host: host, Owner: owner, Name: name}, branch))...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("repo"), repoModel{
-		Host:  types.StringValue(parts[0]),
-		Owner: types.StringValue(parts[1]),
-		Name:  types.StringValue(parts[2]),
+		Host:  types.StringValue(host),
+		Owner: types.StringValue(owner),
+		Name:  types.StringValue(name),
 	})...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("target_branch"), parts[3])...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("target_branch"), branch)...)
+}
+
+// parseImportID splits an import address. Git forbids `:` in branch names, so a `:` after the host
+// ends the repository path. Without one, the branch is everything after the third slash.
+func parseImportID(id string) (host, owner, name, branch string, ok bool) {
+	var repoPath string
+	if i := strings.LastIndex(id, ":"); i > strings.Index(id, "/") {
+		var rest string
+		host, rest, _ = strings.Cut(id[:i], "/")
+		owner, name = client.SplitRepoPath(rest)
+		branch = id[i+1:]
+		repoPath = rest
+	} else {
+		parts := strings.SplitN(id, "/", 4)
+		if len(parts) != 4 {
+			return "", "", "", "", false
+		}
+		host, owner, name, branch = parts[0], parts[1], parts[2], parts[3]
+		repoPath = owner + "/" + name
+	}
+	ok = host != "" && owner != "" && name != "" && branch != "" && !strings.Contains(repoPath, "//")
+	return host, owner, name, branch, ok
 }
