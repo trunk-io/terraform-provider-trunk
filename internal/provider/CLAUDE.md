@@ -12,7 +12,7 @@ The provider (`provider.go`) and the `trunk_merge_queue` resource (`merge_queue_
 - `Update` refuses when the queue on the branch has a different ID than the state's (recreated outside Terraform) without a refresh. A refresh that finds the old ID gone drops the resource from state (`ErrNotFound`) rather than adopting the replacement — matching create, which refuses to take over a queue already on the branch.
 - Repo `host`/`owner`/`name` replace only when they differ ignoring case, so import-by-ID with a differently-capitalized config updates state in place instead of destroy+create (which would fail: v2 create matches names exactly).
 - Enum values are lowercase snake_case, matching v1.
-- Import IDs: `{host}/{owner}/{name}/{target_branch}` (`SplitN(..., 4)` keeps slashes in branch names), or a v2 queue ID with an API key.
+- Import IDs: `{host}/{owner}/{name}/{target_branch}` (`SplitN(..., 4)` keeps slashes in branch names), `{host}/{owner}/{name}:{target_branch}` for an owner with slashes (a GitLab subgroup), or a v2 queue ID with an API key. The computed `id` is always a valid import ID (`addressOf`): it takes the `:` form exactly when the owner has slashes. No state predates that, since neither API served such an owner before.
 
 ## Tests
 

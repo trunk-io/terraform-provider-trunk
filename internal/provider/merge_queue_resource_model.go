@@ -203,7 +203,7 @@ func (m *mergeQueueResourceModel) fromQueue(q *client.Queue, expected *mergeQueu
 		Name:  types.StringValue(q.Repo.Name),
 	}
 	m.TargetBranch = types.StringValue(q.TargetBranch)
-	m.ID = types.StringValue(q.Repo.Host + "/" + q.Repo.Owner + "/" + q.Repo.Name + "/" + q.TargetBranch)
+	m.ID = types.StringValue(addressOf(q.Repo, q.TargetBranch))
 	m.QueueID = nullableString(q.ID)
 	m.ManagedState = nullableString(q.ManagedState)
 

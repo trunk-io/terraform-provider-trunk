@@ -243,9 +243,8 @@ func (s *Server) serveV2(w http.ResponseWriter, r *http.Request, raw json.RawMes
 			v2Error(w, http.StatusConflict, "QUEUE_ALREADY_EXISTS", "a merge queue already exists on this branch")
 			return
 		}
-		rp := strings.SplitN(repo, "/", 3)
 		s.nextID++
-		q := newQueue(fmt.Sprintf("mq%d", s.nextID), rp[0], rp[1], rp[2], req.TargetBranch)
+		q := newRepoQueue(fmt.Sprintf("mq%d", s.nextID), repo, req.TargetBranch)
 		q.Mode = modeFromV2[deref(req.Mode, "queue")]
 		setInt(&q.Concurrency, req.Concurrency)
 		if fromTerraform(r) {

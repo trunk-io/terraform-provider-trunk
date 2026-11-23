@@ -205,14 +205,25 @@ func (w *v2Queue) toQueue(repo Repo) *Queue {
 	}
 }
 
-// repoFromURL splits a repository URL such as https://github.com/acme/widgets.
+// repoFromURL splits a repository URL such as https://github.com/acme/widgets. The last path
+// segment is the name and the rest the owner, as trunk2 splits it, so a GitLab subgroup project
+// (https://gitlab.com/acme/platform/widgets) has owner acme/platform.
 func repoFromURL(raw string) Repo {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return Repo{}
 	}
-	owner, name, _ := strings.Cut(strings.Trim(u.Path, "/"), "/")
+	owner, name := SplitRepoPath(strings.Trim(u.Path, "/"))
 	return Repo{Host: u.Host, Owner: owner, Name: strings.TrimSuffix(name, ".git")}
+}
+
+// SplitRepoPath splits a repository path at its last slash into owner and name.
+func SplitRepoPath(p string) (owner, name string) {
+	i := strings.LastIndex(p, "/")
+	if i < 0 {
+		return "", p
+	}
+	return p[:i], p[i+1:]
 }
 
 func v2ConfigFrom(s Settings) v2Config {
@@ -257,7 +268,7 @@ func v2ConfigFrom(s Settings) v2Config {
 // so there can be several.
 func (c *Client) repositoryIDs(ctx context.Context, repo Repo) ([]string, error) {
 	q := url.Values{}
-	q.Set("providerUrl", fmt.Sprintf("https://%s/%s/%s", repo.Host, repo.Owner, repo.Name))
+	q.Set("providerUrl", repo.URL())
 	q.Set("limit", "100")
 	var list v2List[struct {
 		ID string `json:"id"`
@@ -331,7 +342,7 @@ func (c *Client) getV2ByBranch(ctx context.Context, ref QueueRef) (*Queue, error
 // repository whose URL matches ref's apart from case. Without a match it returns notFound, not
 // ErrNotFound: the repository can't be found, so the queue can't be said to be gone.
 func (c *Client) findV2IgnoringCase(ctx context.Context, ref QueueRef, notFound error) (*Queue, error) {
-	want := strings.ToLower(fmt.Sprintf("https://%s/%s/%s", ref.Repo.Host, ref.Repo.Owner, ref.Repo.Name))
+	want := strings.ToLower(ref.Repo.URL())
 	q := url.Values{}
 	q.Set("limit", "100")
 	for {

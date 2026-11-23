@@ -212,6 +212,14 @@ func (s *Server) find(repo, branch string) *Queue {
 	return nil
 }
 
+// newRepoQueue makes a queue on repo ("host/owner/name"), whose owner may have slashes (a GitLab
+// subgroup): the last segment is the name, as in trunk2.
+func newRepoQueue(id, repo, branch string) *Queue {
+	host, path, _ := strings.Cut(repo, "/")
+	i := strings.LastIndex(path, "/")
+	return newQueue(id, host, path[:i], path[i+1:], branch)
+}
+
 func newQueue(id, host, owner, name, branch string) *Queue {
 	return &Queue{
 		ID: id, Host: host, Owner: owner, Name: name, Branch: branch,
